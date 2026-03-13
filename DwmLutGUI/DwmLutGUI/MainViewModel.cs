@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -20,6 +20,7 @@ namespace DwmLutGUI
         private MonitorData _selectedMonitor;
         private bool _isActive;
         private Key _toggleKey;
+        private bool _autostartAsked;
 
         private readonly string _configPath;
 
@@ -88,6 +89,7 @@ namespace DwmLutGUI
 
             var xElem = new XElement("monitors",
                 new XAttribute("lut_toggle", _toggleKey),
+                new XAttribute("autostart_asked", _autostartAsked),
                 _allMonitors.Select(x =>
                     new XElement("monitor", new XAttribute("path", x.DevicePath),
                         x.SdrLutPath != null ? new XAttribute("sdr_lut", x.SdrLutPath) : null,
@@ -139,6 +141,18 @@ namespace DwmLutGUI
             get => _toggleKey;
         }
 
+        public bool AutostartAsked
+        {
+            set
+            {
+                if (value == _autostartAsked) return;
+                _autostartAsked = value;
+                OnPropertyChanged();
+                SaveConfig();
+            }
+            get => _autostartAsked;
+        }
+
         public bool IsActive
         {
             set
@@ -167,15 +181,18 @@ namespace DwmLutGUI
                 try
                 {
                     _toggleKey = (Key)Enum.Parse(typeof(Key), (string)XElement.Load(_configPath).Attribute("lut_toggle"));
+                    _autostartAsked = (bool?)XElement.Load(_configPath).Attribute("autostart_asked") ?? false;
                 }
                 catch
                 {
                     _toggleKey = Key.Pause;
+                    _autostartAsked = false;
                 }
             }
             else
             {
                 _toggleKey = Key.Pause;
+                _autostartAsked = false;
             }
 
             var paths = WindowsDisplayAPI.DisplayConfig.PathInfo.GetActivePaths();

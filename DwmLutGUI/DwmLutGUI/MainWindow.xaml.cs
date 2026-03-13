@@ -21,6 +21,7 @@ namespace DwmLutGUI
     {
         private readonly MainViewModel _viewModel;
         private bool _applyOnCooldown;
+        private bool _isExiting;
 
         private readonly MenuItem _statusItem;
         private readonly MenuItem _applyItem;
@@ -108,7 +109,10 @@ namespace DwmLutGUI
                 var exitItem = new MenuItem();
                 contextMenu.MenuItems.Add(exitItem);
                 exitItem.Text = "Exit";
-                exitItem.Click += delegate { Close(); };
+                exitItem.Click += delegate { 
+                    _isExiting = true;
+                    Close(); 
+                };
 
                 contextMenu.Popup += delegate { UpdateContextMenu(); };
 
@@ -122,6 +126,9 @@ namespace DwmLutGUI
                 App.KListener.KeyDown += MonitorLutToggle;
                 var keys = Enum.GetValues(typeof(Key)).Cast<Key>().ToList();
                 ToggleKeyCombo.ItemsSource = keys;
+
+                Closing += MainWindow_Closing;
+                CheckAutostart();
             }
             catch (Exception ex)
             {
@@ -138,6 +145,60 @@ namespace DwmLutGUI
             }
 
             base.OnStateChanged(e);
+        }
+
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_isExiting)
+            {
+                e.Cancel = true;
+                Hide();
+            }
+        }
+
+        private void CheckAutostart()
+        {
+            if (_viewModel.AutostartAsked) return;
+
+            var result = MessageBox.Show(
+                "Hi! Would you like DwmLut to start automatically with Windows?\n\nThis ensures your LUTs are applied as soon as you log in.",
+                "Autostart",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                SetAutostart(true);
+            }
+            
+            _viewModel.AutostartAsked = true;
+        }
+
+        private void SetAutostart(bool enable)
+        {
+            try
+            {
+                string path = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+                RegistryKey key = Registry.CurrentUser.OpenSubKey(path, true);
+                if (key != null)
+                {
+                    if (enable)
+                    {
+                        string exePath = Assembly.GetExecutingAssembly().Location;
+                        // For .NET app, Location might be the .dll, we want the .exe
+                        if (exePath.EndsWith(".dll")) exePath = exePath.Replace(".dll", ".exe");
+                        key.SetValue("DwmLutGUI", $"\"{exePath}\" -minimize");
+                    }
+                    else
+                    {
+                        key.DeleteValue("DwmLutGUI", false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error setting autostart: " + ex.Message);
+            }
         }
 
         private void UpdateContextMenu()
