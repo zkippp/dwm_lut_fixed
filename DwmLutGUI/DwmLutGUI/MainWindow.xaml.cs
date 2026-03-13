@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -29,97 +29,105 @@ namespace DwmLutGUI
 
         public MainWindow()
         {
-            if (Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName).Length > 1)
+            try
             {
-                MessageBox.Show("Already running!");
-                Close();
-                return;
-            }
-
-            InitializeComponent();
-            _viewModel = (MainViewModel)DataContext;
-            _applyOnCooldown = false;
-
-            var args = Environment.GetCommandLineArgs().ToList();
-            args.RemoveAt(0);
-
-            if (args.Contains("-apply"))
-            {
-                Apply_Click(null, null);
-            }
-            else if (args.Contains("-disable"))
-            {
-                Disable_Click(null, null);
-            }
-
-            if (args.Contains("-minimize"))
-            {
-                WindowState = WindowState.Minimized;
-                Hide();
-            }
-            else if (args.Contains("-exit"))
-            {
-                Close();
-                return;
-            }
-
-            var notifyIcon = new NotifyIcon();
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("DwmLutGUI.smile.ico");
-            notifyIcon.Icon = new Icon(stream);
-            notifyIcon.Visible = true;
-            notifyIcon.DoubleClick +=
-                delegate
+                if (Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName).Length > 1)
                 {
-                    Show();
-                    WindowState = WindowState.Normal;
+                    MessageBox.Show("Already running!");
+                    Close();
+                    return;
+                }
+
+                InitializeComponent();
+                _viewModel = (MainViewModel)DataContext;
+                _applyOnCooldown = false;
+
+                var args = Environment.GetCommandLineArgs().ToList();
+                args.RemoveAt(0);
+
+                if (args.Contains("-apply"))
+                {
+                    Apply_Click(null, null);
+                }
+                else if (args.Contains("-disable"))
+                {
+                    Disable_Click(null, null);
+                }
+
+                if (args.Contains("-minimize"))
+                {
+                    WindowState = WindowState.Minimized;
+                    Hide();
+                }
+                else if (args.Contains("-exit"))
+                {
+                    Close();
+                    return;
+                }
+
+                var notifyIcon = new NotifyIcon();
+                var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("DwmLutGUI.smile.ico");
+                notifyIcon.Icon = new Icon(stream);
+                notifyIcon.Visible = true;
+                notifyIcon.DoubleClick +=
+                    delegate
+                    {
+                        Show();
+                        WindowState = WindowState.Normal;
+                    };
+
+                var contextMenu = new ContextMenu();
+
+                _statusItem = new MenuItem();
+                contextMenu.MenuItems.Add(_statusItem);
+                _statusItem.Enabled = false;
+
+                contextMenu.MenuItems.Add("-");
+
+                _applyItem = new MenuItem();
+                contextMenu.MenuItems.Add(_applyItem);
+                _applyItem.Text = "Apply";
+                _applyItem.Click += delegate { Apply_Click(null, null); };
+
+                _disableItem = new MenuItem();
+                contextMenu.MenuItems.Add(_disableItem);
+                _disableItem.Text = "Disable";
+                _disableItem.Click += delegate { Disable_Click(null, null); };
+
+                contextMenu.MenuItems.Add("-");
+
+                _disableAndExitItem = new MenuItem();
+                contextMenu.MenuItems.Add(_disableAndExitItem);
+                _disableAndExitItem.Text = "Disable and exit";
+                _disableAndExitItem.Click += delegate
+                {
+                    Disable_Click(null, null);
+                    Close();
                 };
 
-            var contextMenu = new ContextMenu();
+                var exitItem = new MenuItem();
+                contextMenu.MenuItems.Add(exitItem);
+                exitItem.Text = "Exit";
+                exitItem.Click += delegate { Close(); };
 
-            _statusItem = new MenuItem();
-            contextMenu.MenuItems.Add(_statusItem);
-            _statusItem.Enabled = false;
+                contextMenu.Popup += delegate { UpdateContextMenu(); };
 
-            contextMenu.MenuItems.Add("-");
+                notifyIcon.ContextMenu = contextMenu;
 
-            _applyItem = new MenuItem();
-            contextMenu.MenuItems.Add(_applyItem);
-            _applyItem.Text = "Apply";
-            _applyItem.Click += delegate { Apply_Click(null, null); };
+                notifyIcon.Text = Assembly.GetEntryAssembly().GetName().Name;
 
-            _disableItem = new MenuItem();
-            contextMenu.MenuItems.Add(_disableItem);
-            _disableItem.Text = "Disable";
-            _disableItem.Click += delegate { Disable_Click(null, null); };
+                Closed += delegate { notifyIcon.Dispose(); };
 
-            contextMenu.MenuItems.Add("-");
-
-            _disableAndExitItem = new MenuItem();
-            contextMenu.MenuItems.Add(_disableAndExitItem);
-            _disableAndExitItem.Text = "Disable and exit";
-            _disableAndExitItem.Click += delegate
+                SystemEvents.DisplaySettingsChanged += _viewModel.OnDisplaySettingsChanged;
+                App.KListener.KeyDown += MonitorLutToggle;
+                var keys = Enum.GetValues(typeof(Key)).Cast<Key>().ToList();
+                ToggleKeyCombo.ItemsSource = keys;
+            }
+            catch (Exception ex)
             {
-                Disable_Click(null, null);
+                MessageBox.Show("MainWindow init crash:\n\n" + ex.ToString(), "DwmLutGUI Error");
                 Close();
-            };
-
-            var exitItem = new MenuItem();
-            contextMenu.MenuItems.Add(exitItem);
-            exitItem.Text = "Exit";
-            exitItem.Click += delegate { Close(); };
-
-            contextMenu.Popup += delegate { UpdateContextMenu(); };
-
-            notifyIcon.ContextMenu = contextMenu;
-
-            notifyIcon.Text = Assembly.GetEntryAssembly().GetName().Name;
-
-            Closed += delegate { notifyIcon.Dispose(); };
-
-            SystemEvents.DisplaySettingsChanged += _viewModel.OnDisplaySettingsChanged;
-            App.KListener.KeyDown += MonitorLutToggle;
-            var keys = Enum.GetValues(typeof(Key)).Cast<Key>().ToList();
-            ToggleKeyCombo.ItemsSource = keys;
+            }
         }
 
         protected override void OnStateChanged(EventArgs e)
