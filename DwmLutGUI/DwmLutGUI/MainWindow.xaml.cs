@@ -166,7 +166,7 @@ namespace DwmLutGUI
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
 
-            if (result == DialogResult.Yes)
+            if (result == System.Windows.Forms.DialogResult.Yes)
             {
                 SetAutostart(true);
             }
