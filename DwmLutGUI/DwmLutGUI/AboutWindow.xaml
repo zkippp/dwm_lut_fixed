@@ -1,4 +1,4 @@
-﻿<Window x:Class="DwmLutGUI.AboutWindow"
+<Window x:Class="DwmLutGUI.AboutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -11,12 +11,12 @@
         SnapsToDevicePixels="True">
     <StackPanel Margin="6">
         <TextBlock FontSize="15" HorizontalAlignment="Center" TextAlignment="Center">
-            dwm_lut v3.9.6 by lauralex (original by ledoge)
+            dwm_lut_fixed by eduu (original by ledoge)
         </TextBlock>
         <TextBlock HorizontalAlignment="Center" TextAlignment="Center">
             Licensed under GPLv3 <LineBreak /> <LineBreak />
             Source code and releases hosted at <LineBreak />
-            <Hyperlink RequestNavigate="OnRequestNavigate" NavigateUri="https://github.com/lauralex/dwm_lut">https://github.com/lauralex/dwm_lut</Hyperlink>
+            <Hyperlink RequestNavigate="OnRequestNavigate" NavigateUri="https://github.com/edutuu9/dwm_lut_fixed">https://github.com/edutuu9/dwm_lut_fixed</Hyperlink>
         </TextBlock>
     </StackPanel>
 </Window>
