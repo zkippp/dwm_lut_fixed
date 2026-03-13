@@ -88,25 +88,11 @@
 
 
 #if DEBUG_MODE == true
-void print_error(const char* prefix_message)
-{
-	DWORD errorCode = GetLastError();
-	LPSTR errorMessage = nullptr;
-	FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-	               nullptr, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&errorMessage, 0, nullptr);
-
-	char message_buf[100];
-	sprintf(message_buf, "%s: %s - error code: %u", prefix_message, errorMessage, errorCode);
-	MESSAGE_BOX_DBG(message_buf, MB_OK | MB_ICONWARNING)
-	return;
-}
-
 void log_to_file(const char* log_buf)
 {
 	FILE* pFile = fopen(LOG_FILE_PATH, "a");
 	if (pFile == NULL)
 	{
-		// print_error("Error during logging"); // Comment out to prevent UI freeze when used inside hooked functions
 		return;
 	}
 	fseek(pFile, 0, SEEK_END);
@@ -123,6 +109,19 @@ void log_to_file(const char* log_buf)
 	fprintf(pFile, "%s\n", log_buf);
 	fclose(pFile);
 }
+
+void print_error(const char* prefix_message)
+{
+	DWORD errorCode = GetLastError();
+	LPSTR errorMessage = nullptr;
+	FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	               nullptr, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&errorMessage, 0, nullptr);
+
+	char message_buf[100];
+	sprintf(message_buf, "%s: %s - error code: %u", prefix_message, errorMessage, errorCode);
+	log_to_file(message_buf);
+	return;
+}
 #endif
 
 
@@ -133,6 +132,14 @@ unsigned int lut_index(const unsigned int b, const unsigned int g, const unsigne
 }
 
 #define LUT_ACCESS_INDEX(lut, b, g, r, c, lut_size) (*((float*)(lut) + lut_index(b, g, r, c, lut_size)))
+
+// Find relative address utility function
+void* get_relative_address(void* instruction_address, int offset, int instruction_size)
+{
+	int relative_offset = *(int*)((unsigned char*)instruction_address + offset);
+
+	return (unsigned char*)instruction_address + instruction_size + relative_offset;
+}
 
 
 const unsigned char COverlayContext_Present_bytes[] = {
@@ -188,7 +195,76 @@ int COverlayContext_DeviceClipBox_offset_w11 = 0x466C;
 
 const int IOverlaySwapChain_HardwareProtected_offset_w11 = -0x144;
 
-bool isWindows11;
+
+/**
+ * AOB for function COverlayContext_Present_bytes_w11_24h2
+ *
+ * 4C 8B DC 56 41 56
+ */
+const unsigned char COverlayContext_Present_bytes_w11_24h2[] = {
+	0x4C, 0x8B, 0xDC, 0x56, 0x41, 0x56
+};
+
+const int IOverlaySwapChain_IDXGISwapChain_offset_w11_24h2 = 0x108; // wrt OverlaySwapChain
+
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2[] = {
+	0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, '?', 0x48, 0x89, 0x68, '?', 0x48, 0x89, 0x70, '?', 0x48, 0x89, 0x78, '?', 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xDB
+};
+
+const unsigned char COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2[] = {
+	0xE8, '?', '?', '?', '?', 0x84, 0xC0, 0xB8, 0x04, 0x00, 0x00, 0x00
+};
+
+int COverlayContext_DeviceClipBox_offset_w11_24h2 = 0x53E8;
+
+const int IOverlaySwapChain_HardwareProtected_offset_w11_24h2 = 0x64;
+
+
+/**
+ * AOB for function COverlayContext_Present_bytes_w11_25h2
+ *
+ * 40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 F9 48 81 EC F8 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 EF 4C 8B 65 ?? 48 8B D9
+ */
+const unsigned char COverlayContext_Present_bytes_w11_25h2[] = {
+	0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0x6C,
+	0x24, 0xF9, 0x48, 0x81, 0xEC, 0xF8, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x05,
+	'?', '?', '?', '?', 0x48, 0x33, 0xC4, 0x48, 0x89, 0x45, 0xEF, 0x4C, 0x8B, 0x65, '?', 0x48, 0x8B, 0xD9
+};
+
+/**
+ * AOB for function COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2
+ *
+ * 48 8B C4 48 89 58 08 48 89 68 10 48 89 70 18 48 89 78 20 41 56 48 83 EC 20 33 DB
+ */
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2[] = {
+	0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x68, 0x10, 0x48, 0x89, 0x70, 0x18, 0x48,
+	0x89, 0x78, 0x20, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xDB
+};
+
+/**
+ * AOB for function COverlayContext_OverlaysEnabled_bytes_w11_25h2
+ *
+ * 83 3D ?? ?? ?? ?? 05 74 09 83 79 28 01 0F 97 C0 C3
+ */
+const unsigned char COverlayContext_OverlaysEnabled_bytes_w11_25h2[] = {
+	0x83, 0x3D, '?', '?', '?', '?', 0x05, 0x74, 0x09, 0x83, 0x79, 0x28, 0x01, 0x0F, 0x97, 0xC0, 0xC3
+};
+
+// On 25H2: position stored as ints (not floats) at realObj+0xDC (left) and realObj+0xE0 (top)
+int COverlayContext_DeviceClipBox_offset_w11_25h2 = 0x7698;
+
+const int IOverlaySwapChain_HardwareProtected_offset_w11_25h2 = 0x4C;
+
+// In 25H2, swap chain is obtained via vtable call at index 33 (offset 0x108)
+const int IOverlaySwapChain_GetSwapChain_vtable_offset_w11_25h2 = 0x108;
+
+
+bool isWindows11 = false;
+bool isWindows11_24h2 = false;
+bool isWindows11_25h2 = false;
+
+// Pointer to DWM's OverlayTestMode global variable (found from OverlaysEnabled AOB)
+static int* g_pOverlayTestMode = NULL;
 
 bool aob_match_inverse(const void* buf1, const void* mask, const int buf_len)
 {
@@ -495,8 +571,7 @@ bool AddLUTs(char* folder)
 				lut->textureView = NULL;
 				if (!ParseLUT(lut, filePath))
 				{
-					// TODO: Remove this debug instruction
-					MESSAGE_BOX_DBG("LUT could not be parsed", MB_OK | MB_ICONWARNING)
+					LOG_ONLY_ONCE("LUT could not be parsed")
 					FindClose(hFind);
 					return false;
 				}
@@ -511,6 +586,10 @@ bool AddLUTs(char* folder)
 
 int numLutTargets;
 void** lutTargets;
+
+// 25H2: Track which COverlayContext was initially HDR (main monitor)
+// When a game disables HDR, this context switches to SDR but we still want to apply the LUT to it
+static void* g_primaryHdrContext = NULL;
 
 bool IsLUTActive(void* target)
 {
@@ -549,11 +628,39 @@ void UnsetLUTActive(void* target)
 lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 {
 	int left, top;
-	if (isWindows11)
+
+	if (isWindows11_25h2)
+	{
+		void* realObj = *(void**)context;
+		float* rect = (float*)((unsigned char*)realObj + 0x7698);
+		left = (int)rect[0];
+		top = (int)rect[1];
+	}
+	else if (isWindows11_24h2)
+	{
+		float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11_24h2);
+		left = (int)rect[2];
+		top = (int)rect[3];
+		char message_buf[100];
+		sprintf(message_buf, "Left: %d, Top: %d", left, top);
+		LOG_ONLY_ONCE(message_buf)
+
+		// Put rect address in message
+		sprintf(message_buf, "Rect address: 0x%p", rect);
+		LOG_ONLY_ONCE(message_buf)
+	}
+	else if (isWindows11)
 	{
 		float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11);
 		left = (int)rect[0];
 		top = (int)rect[1];
+		char message_buf[100];
+		sprintf(message_buf, "Left: %d, Top: %d", left, top);
+		LOG_ONLY_ONCE(message_buf)
+
+		// Put rect address in message
+		sprintf(message_buf, "Rect address: 0x%p", rect);
+		LOG_ONLY_ONCE(message_buf)
 	}
 	else
 	{
@@ -569,15 +676,29 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 			return &luts[i];
 		}
 	}
+
+	// 25H2 fallback: if this is the primary HDR context but no matching LUT found
+	// (game disabled HDR, context switched to SDR), try matching with opposite HDR flag
+	if (isWindows11_25h2 && g_primaryHdrContext == context)
+	{
+		for (int i = 0; i < numLuts; i++)
+		{
+			if (luts[i].left == left && luts[i].top == top && luts[i].isHdr != hdr)
+			{
+				return &luts[i];
+			}
+		}
+	}
+
 	return NULL;
 }
 
-void InitializeStuff(IDXGISwapChain* swapChain)
+void InitializeStuff(ID3D11Device* inputDevice)
 {
 	try
 	{
-		EXECUTE_WITH_LOG(swapChain->GetDevice(IID_ID3D11Device, (void**)&device))
-		LOG_ADDRESS("Current swapchain address is: ", swapChain)
+		device = inputDevice;
+		device->AddRef();
 		LOG_ONLY_ONCE("Device successfully gathered")
 		LOG_ADDRESS("The device address is: ", device)
 
@@ -763,6 +884,117 @@ void UninitializeStuff()
 	free(lutTargets);
 }
 
+// Shared rendering core. Does NOT release backBuffer - caller handles it.
+bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagRECT* rects, int numRects)
+{
+	ID3D11RenderTargetView* renderTargetView;
+
+	D3D11_TEXTURE2D_DESC newBackBufferDesc;
+	backBuffer->GetDesc(&newBackBufferDesc);
+
+	int index = -1;
+	if (newBackBufferDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM)
+	{
+		index = 0;
+	}
+	else if (newBackBufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
+	{
+		index = 1;
+		// 25H2: Remember which context uses HDR - this is the primary/main monitor
+		if (isWindows11_25h2 && g_primaryHdrContext == NULL)
+		{
+			g_primaryHdrContext = cOverlayContext;
+		}
+	}
+
+	lutData* lut;
+	if (index == -1 || !(lut = GetLUTDataFromCOverlayContext(cOverlayContext, index == 1)))
+	{
+		char message[256];
+		sprintf(message, "LUT not found for index %d", index);
+		LOG_ONLY_ONCE(message)
+		return false;
+	}
+
+	D3D11_TEXTURE2D_DESC oldTextureDesc = textureDesc[index];
+	if (newBackBufferDesc.Width > oldTextureDesc.Width || newBackBufferDesc.Height > oldTextureDesc.Height)
+	{
+		if (texture[index] != NULL)
+		{
+			texture[index]->Release();
+			textureView[index]->Release();
+		}
+
+		UINT newWidth = max(newBackBufferDesc.Width, oldTextureDesc.Width);
+		UINT newHeight = max(newBackBufferDesc.Height, oldTextureDesc.Height);
+
+		D3D11_TEXTURE2D_DESC newTextureDesc;
+
+		newTextureDesc = newBackBufferDesc;
+		newTextureDesc.Width = newWidth;
+		newTextureDesc.Height = newHeight;
+		newTextureDesc.Usage = D3D11_USAGE_DEFAULT;
+		newTextureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		newTextureDesc.CPUAccessFlags = 0;
+		newTextureDesc.MiscFlags = 0;
+
+		textureDesc[index] = newTextureDesc;
+
+		EXECUTE_WITH_LOG(device->CreateTexture2D(&textureDesc[index], NULL, &texture[index]))
+		EXECUTE_WITH_LOG(
+			device->CreateShaderResourceView((ID3D11Resource*)texture[index], NULL, &textureView[index]))
+	}
+
+	backBufferDesc = newBackBufferDesc;
+
+	EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &renderTargetView))
+	const D3D11_VIEWPORT d3d11_viewport(0, 0, backBufferDesc.Width, backBufferDesc.Height, 0.0f, 1.0f);
+	deviceContext->RSSetViewports(1, &d3d11_viewport);
+
+	deviceContext->OMSetRenderTargets(1, &renderTargetView, NULL);
+	renderTargetView->Release();
+
+	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	deviceContext->IASetInputLayout(inputLayout);
+
+	deviceContext->VSSetShader(vertexShader, NULL, 0);
+	deviceContext->PSSetShader(pixelShader, NULL, 0);
+
+	deviceContext->PSSetShaderResources(0, 1, &textureView[index]);
+	deviceContext->PSSetShaderResources(1, 1, &lut->textureView);
+	deviceContext->PSSetSamplers(0, 1, &samplerState);
+
+	deviceContext->PSSetShaderResources(2, 1, &noiseTextureView);
+	deviceContext->PSSetSamplers(1, 1, &noiseSamplerState);
+
+	int constantData[4] = {lut->size, index == 1};
+
+	D3D11_MAPPED_SUBRESOURCE resource;
+	EXECUTE_WITH_LOG(deviceContext->Map((ID3D11Resource*)constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0,
+		&resource))
+	memcpy(resource.pData, constantData, sizeof(constantData));
+	deviceContext->Unmap((ID3D11Resource*)constantBuffer, 0);
+
+	deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
+
+	for (int i = 0; i < numRects; i++)
+	{
+		D3D11_BOX sourceRegion;
+		sourceRegion.left = rects[i].left;
+		sourceRegion.right = rects[i].right;
+		sourceRegion.top = rects[i].top;
+		sourceRegion.bottom = rects[i].bottom;
+		sourceRegion.front = 0;
+		sourceRegion.back = 1;
+
+		deviceContext->CopySubresourceRegion((ID3D11Resource*)texture[index], 0, rects[i].left,
+		                                     rects[i].top, 0, (ID3D11Resource*)backBuffer, 0, &sourceRegion);
+		DrawRectangle(&rects[i], index);
+	}
+
+	return true;
+}
+
 bool ApplyLUT(void* cOverlayContext, IDXGISwapChain* swapChain, struct tagRECT* rects, int numRects)
 {
 	try
@@ -770,114 +1002,50 @@ bool ApplyLUT(void* cOverlayContext, IDXGISwapChain* swapChain, struct tagRECT* 
 		if (!device)
 		{
 			LOG_ONLY_ONCE("Initializing stuff in ApplyLUT")
-			InitializeStuff(swapChain);
+			ID3D11Device* dev;
+			EXECUTE_WITH_LOG(swapChain->GetDevice(IID_ID3D11Device, (void**)&dev))
+			InitializeStuff(dev);
+			dev->Release();
 		}
 		LOG_ONLY_ONCE("Init done, continuing with LUT application")
 
 		ID3D11Texture2D* backBuffer;
-		ID3D11RenderTargetView* renderTargetView;
-
-
 		EXECUTE_WITH_LOG(swapChain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&backBuffer))
 
-		D3D11_TEXTURE2D_DESC newBackBufferDesc;
-		backBuffer->GetDesc(&newBackBufferDesc);
-
-		int index = -1;
-		if (newBackBufferDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM)
-		{
-			index = 0;
-		}
-		else if (newBackBufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
-		{
-			index = 1;
-		}
-
-		lutData* lut;
-		if (index == -1 || !(lut = GetLUTDataFromCOverlayContext(cOverlayContext, index == 1)))
-		{
-			backBuffer->Release();
-			return false;
-		}
-
-		D3D11_TEXTURE2D_DESC oldTextureDesc = textureDesc[index];
-		if (newBackBufferDesc.Width > oldTextureDesc.Width || newBackBufferDesc.Height > oldTextureDesc.Height)
-		{
-			if (texture[index] != NULL)
-			{
-				texture[index]->Release();
-				textureView[index]->Release();
-			}
-
-			UINT newWidth = max(newBackBufferDesc.Width, oldTextureDesc.Width);
-			UINT newHeight = max(newBackBufferDesc.Height, oldTextureDesc.Height);
-
-			D3D11_TEXTURE2D_DESC newTextureDesc;
-
-			newTextureDesc = newBackBufferDesc;
-			newTextureDesc.Width = newWidth;
-			newTextureDesc.Height = newHeight;
-			newTextureDesc.Usage = D3D11_USAGE_DEFAULT;
-			newTextureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-			newTextureDesc.CPUAccessFlags = 0;
-			newTextureDesc.MiscFlags = 0;
-
-			textureDesc[index] = newTextureDesc;
-
-			EXECUTE_WITH_LOG(device->CreateTexture2D(&textureDesc[index], NULL, &texture[index]))
-			EXECUTE_WITH_LOG(
-				device->CreateShaderResourceView((ID3D11Resource*)texture[index], NULL, &textureView[index]))
-		}
-
-		backBufferDesc = newBackBufferDesc;
-
-		EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &renderTargetView))
-		const D3D11_VIEWPORT d3d11_viewport(0, 0, backBufferDesc.Width, backBufferDesc.Height, 0.0f, 1.0f);
-		deviceContext->RSSetViewports(1, &d3d11_viewport);
-
-		deviceContext->OMSetRenderTargets(1, &renderTargetView, NULL);
-		renderTargetView->Release();
-
-		deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-		deviceContext->IASetInputLayout(inputLayout);
-
-		deviceContext->VSSetShader(vertexShader, NULL, 0);
-		deviceContext->PSSetShader(pixelShader, NULL, 0);
-
-		deviceContext->PSSetShaderResources(0, 1, &textureView[index]);
-		deviceContext->PSSetShaderResources(1, 1, &lut->textureView);
-		deviceContext->PSSetSamplers(0, 1, &samplerState);
-
-		deviceContext->PSSetShaderResources(2, 1, &noiseTextureView);
-		deviceContext->PSSetSamplers(1, 1, &noiseSamplerState);
-
-		int constantData[4] = {lut->size, index == 1};
-
-		D3D11_MAPPED_SUBRESOURCE resource;
-		EXECUTE_WITH_LOG(deviceContext->Map((ID3D11Resource*)constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0,
-			&resource))
-		memcpy(resource.pData, constantData, sizeof(constantData));
-		deviceContext->Unmap((ID3D11Resource*)constantBuffer, 0);
-
-		deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
-
-		for (int i = 0; i < numRects; i++)
-		{
-			D3D11_BOX sourceRegion;
-			sourceRegion.left = rects[i].left;
-			sourceRegion.right = rects[i].right;
-			sourceRegion.top = rects[i].top;
-			sourceRegion.bottom = rects[i].bottom;
-			sourceRegion.front = 0;
-			sourceRegion.back = 1;
-
-			deviceContext->CopySubresourceRegion((ID3D11Resource*)texture[index], 0, rects[i].left,
-			                                     rects[i].top, 0, (ID3D11Resource*)backBuffer, 0, &sourceRegion);
-			DrawRectangle(&rects[i], index);
-		}
-
+		bool result = RenderLUT(cOverlayContext, backBuffer, rects, numRects);
 		backBuffer->Release();
-		return true;
+		return result;
+	}
+	catch (std::exception& ex)
+	{
+		std::stringstream ex_message;
+		ex_message << "Exception caught at line " << __LINE__ << ": " << ex.what() << std::endl;
+		LOG_ONLY_ONCE(ex_message.str().c_str())
+		return false;
+	}
+	catch (...)
+	{
+		std::stringstream ex_message;
+		ex_message << "Exception caught at line " << __LINE__ << std::endl;
+		LOG_ONLY_ONCE(ex_message.str().c_str())
+		return false;
+	}
+}
+
+// Apply LUT directly from a back buffer texture (25H2 path - no swap chain needed)
+bool ApplyLUTDirect(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagRECT* rects, int numRects)
+{
+	try
+	{
+		if (!device)
+		{
+			LOG_ONLY_ONCE("Initializing from texture device (25H2)")
+			ID3D11Device* dev;
+			backBuffer->GetDevice(&dev);
+			InitializeStuff(dev);
+			dev->Release();
+		}
+		return RenderLUT(cOverlayContext, backBuffer, rects, numRects);
 	}
 	catch (std::exception& ex)
 	{
@@ -903,9 +1071,142 @@ typedef struct rectVec
 } rectVec;
 
 typedef long (COverlayContext_Present_t)(void*, void*, unsigned int, rectVec*, unsigned int, bool);
+typedef long long (COverlayContext_Present_24h2_t)(void*, void*, unsigned int, rectVec*, int, void*, bool);
 
-COverlayContext_Present_t* COverlayContext_Present_orig;
-COverlayContext_Present_t* COverlayContext_Present_real_orig;
+// Get back buffer texture from overlaySwapChain on 25H2
+// On 25H2, no IDXGISwapChain exists. Instead: overlaySwapChain->vt[24]() -> result->vt[19]() -> QI(ID3D11Texture2D)
+static ID3D11Texture2D* GetBackBuffer_25H2(void* overlaySwapChain)
+{
+	__try
+	{
+		if (!overlaySwapChain) return NULL;
+
+		void** vt = *(void***)overlaySwapChain;
+		if (!vt) return NULL;
+
+		typedef void* (__fastcall *VirtFunc)(void*);
+
+		VirtFunc func1 = (VirtFunc)vt[24];
+		if (!func1) return NULL;
+
+		void* r1 = func1(overlaySwapChain);
+		if (!r1) return NULL;
+
+		void** vt2 = *(void***)r1;
+		if (!vt2) return NULL;
+
+		VirtFunc func2 = (VirtFunc)vt2[19];
+		if (!func2) return NULL;
+
+		void* r2 = func2(r1);
+		if (!r2) return NULL;
+
+		ID3D11Texture2D* tex = NULL;
+		HRESULT hr = ((IUnknown*)r2)->QueryInterface(IID_ID3D11Texture2D, (void**)&tex);
+		if (FAILED(hr) || !tex) return NULL;
+
+		LOG_ONLY_ONCE("25H2: Got texture via overlaySwapChain->vt[24]()->vt2[19]()->QI")
+		return tex;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return NULL;
+	}
+}
+
+COverlayContext_Present_t* COverlayContext_Present_orig = NULL;
+COverlayContext_Present_t* COverlayContext_Present_real_orig = NULL;
+
+COverlayContext_Present_24h2_t* COverlayContext_Present_orig_24h2 = NULL;
+COverlayContext_Present_24h2_t* COverlayContext_Present_real_orig_24h2 = NULL;
+
+long long COverlayContext_Present_hook_24h2(void* self, void* overlaySwapChain, unsigned int a3, rectVec* rectVec,
+	int a5, void* a6, bool a7)
+{
+	if (_ReturnAddress() < (void*)COverlayContext_Present_real_orig_24h2 || isWindows11_24h2 || isWindows11_25h2)
+	{
+			LOG_ONLY_ONCE("I am inside COverlayContext::Present hook inside the main if condition")
+			std::stringstream overlay_swapchain_message;
+			overlay_swapchain_message << "OverlaySwapChain address: 0x" << std::hex << overlaySwapChain
+				<< " -- windows 11 25h2: " << isWindows11_25h2
+				<< " -- windows 11 24h2: " << isWindows11_24h2
+				<< " -- " << "windows 11: " << isWindows11;
+			LOG_ONLY_ONCE(overlay_swapchain_message.str().c_str())
+
+			if (isWindows11_25h2)
+			{
+				// 25H2: Get texture directly from overlaySwapChain via vtable chain
+				ID3D11Texture2D* backBuffer = GetBackBuffer_25H2(overlaySwapChain);
+				if (backBuffer)
+				{
+					if (ApplyLUTDirect(self, backBuffer, rectVec->start, rectVec->end - rectVec->start))
+						SetLUTActive(self);
+					else
+						UnsetLUTActive(self);
+					backBuffer->Release();
+				}
+				else
+				{
+					UnsetLUTActive(self);
+				}
+			}
+			else
+			{
+
+			bool hwProtected = false;
+			if (isWindows11_24h2)
+				hwProtected = *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11_24h2);
+			else if (isWindows11)
+				hwProtected = *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11);
+			else
+				hwProtected = *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset);
+
+			if (hwProtected)
+			{
+				LOG_ONLY_ONCE("Hardware protected - unsetting LUT active")
+				UnsetLUTActive(self);
+			}
+			else
+			{
+				IDXGISwapChain* swapChain = NULL;
+
+				if (isWindows11_24h2)
+				{
+					LOG_ONLY_ONCE("Gathering IDXGISwapChain pointer")
+					swapChain = *(IDXGISwapChain**)((unsigned char*)overlaySwapChain +
+						IOverlaySwapChain_IDXGISwapChain_offset_w11_24h2);
+				}
+				else if (isWindows11)
+				{
+					LOG_ONLY_ONCE("Gathering IDXGISwapChain pointer")
+					int sub_from_legacy_swapchain = *(int*)((unsigned char*)overlaySwapChain - 4);
+					void* real_overlay_swap_chain = (unsigned char*)overlaySwapChain - sub_from_legacy_swapchain -
+						0x1b0;
+					swapChain = *(IDXGISwapChain**)((unsigned char*)real_overlay_swap_chain +
+						IOverlaySwapChain_IDXGISwapChain_offset_w11);
+				}
+				else
+				{
+					swapChain = *(IDXGISwapChain**)((unsigned char*)overlaySwapChain +
+						IOverlaySwapChain_IDXGISwapChain_offset);
+				}
+
+				if (swapChain != NULL && ApplyLUT(self, swapChain, rectVec->start, rectVec->end - rectVec->start))
+				{
+					LOG_ONLY_ONCE("Setting LUTactive")
+					SetLUTActive(self);
+				}
+				else
+				{
+					LOG_ONLY_ONCE("Un-setting LUTactive")
+					UnsetLUTActive(self);
+				}
+			}
+			} // end else (non-25H2)
+	}
+
+	return COverlayContext_Present_orig_24h2(self, overlaySwapChain, a3, rectVec, a5, a6, a7);
+}
 
 
 long COverlayContext_Present_hook(void* self, void* overlaySwapChain, unsigned int a3, rectVec* rectVec,
@@ -915,25 +1216,21 @@ long COverlayContext_Present_hook(void* self, void* overlaySwapChain, unsigned i
 	{
 		LOG_ONLY_ONCE("I am inside COverlayContext::Present hook inside the main if condition")
 
-		if (isWindows11 && *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11) ||
-			!isWindows11 && *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset))
+		bool hwProtected = false;
+		if (isWindows11)
+			hwProtected = *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11);
+		else
+			hwProtected = *((bool*)overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset);
+
+		if (hwProtected)
 		{
-			std::stringstream hw_protection_message;
-			hw_protection_message << "I'm inside the Hardware protection condition - 0x" << std::hex << (bool*)
-				overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11 << " - value: 0x" << *((bool*)
-					overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11);
-			LOG_ONLY_ONCE(hw_protection_message.str().c_str())
+			LOG_ONLY_ONCE("Hardware protected - unsetting LUT active")
 			UnsetLUTActive(self);
 		}
 		else
 		{
-			std::stringstream hw_protection_message;
-			hw_protection_message << "I'm outside the Hardware protection condition - 0x" << std::hex << (bool*)
-				overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11 << " - value: 0x" << *((bool*)
-					overlaySwapChain + IOverlaySwapChain_HardwareProtected_offset_w11);
-			LOG_ONLY_ONCE(hw_protection_message.str().c_str())
-
 			IDXGISwapChain* swapChain;
+
 			if (isWindows11)
 			{
 				LOG_ONLY_ONCE("Gathering IDXGISwapChain pointer")
@@ -967,13 +1264,25 @@ long COverlayContext_Present_hook(void* self, void* overlaySwapChain, unsigned i
 
 typedef bool (COverlayContext_IsCandidateDirectFlipCompatbile_t)(void*, void*, void*, void*, int, unsigned int, bool,
                                                                  bool);
+typedef bool (COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t)(void*, void*, void*, void*, unsigned int, bool);
 
 COverlayContext_IsCandidateDirectFlipCompatbile_t* COverlayContext_IsCandidateDirectFlipCompatbile_orig;
+COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t* COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2;
+
+bool COverlayContext_IsCandidateDirectFlipCompatbile_hook_24h2(void* self, void* a2, void* a3, void* a4, unsigned int a5,
+	bool a6)
+{
+	if (numLuts > 0)
+	{
+		return false;
+	}
+	return COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2(self, a2, a3, a4, a5, a6);
+}
 
 bool COverlayContext_IsCandidateDirectFlipCompatbile_hook(void* self, void* a2, void* a3, void* a4, int a5,
                                                           unsigned int a6, bool a7, bool a8)
 {
-	if (IsLUTActive(self))
+	if (numLuts > 0)
 	{
 		return false;
 	}
@@ -982,13 +1291,12 @@ bool COverlayContext_IsCandidateDirectFlipCompatbile_hook(void* self, void* a2, 
 
 typedef bool (COverlayContext_OverlaysEnabled_t)(void*);
 
-COverlayContext_OverlaysEnabled_t* COverlayContext_OverlaysEnabled_orig;
+COverlayContext_OverlaysEnabled_t* COverlayContext_OverlaysEnabled_orig  = NULL;
 
 bool COverlayContext_OverlaysEnabled_hook(void* self)
 {
-	if (IsLUTActive(self))
+	if (numLuts > 0)
 	{
-		LOG_ONLY_ONCE("LUT ACTIVE FALSE in overlaysEnabled")
 		return false;
 	}
 	return COverlayContext_OverlaysEnabled_orig(self);
@@ -1009,10 +1317,31 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 			versionInfo.dwOSVersionInfoSize = sizeof OSVERSIONINFOEX;
 			versionInfo.dwBuildNumber = 22000;
 
+			// Version info for windows 11 24h2
+			OSVERSIONINFOEX versionInfo24h2;
+			ZeroMemory(&versionInfo24h2, sizeof OSVERSIONINFOEX);
+			versionInfo24h2.dwOSVersionInfoSize = sizeof OSVERSIONINFOEX;
+			versionInfo24h2.dwBuildNumber = 26100;
+
+			// Version info for windows 11 25h2
+			OSVERSIONINFOEX versionInfo25h2;
+			ZeroMemory(&versionInfo25h2, sizeof OSVERSIONINFOEX);
+			versionInfo25h2.dwOSVersionInfoSize = sizeof OSVERSIONINFOEX;
+			versionInfo25h2.dwBuildNumber = 26200;
+
+
 			ULONGLONG dwlConditionMask = 0;
 			VER_SET_CONDITION(dwlConditionMask, VER_BUILDNUMBER, VER_GREATER_EQUAL);
 
-			if (VerifyVersionInfo(&versionInfo, VER_BUILDNUMBER, dwlConditionMask))
+			if (VerifyVersionInfo(&versionInfo25h2, VER_BUILDNUMBER, dwlConditionMask))
+			{
+				isWindows11_25h2 = true;
+			}
+			else if (VerifyVersionInfo(&versionInfo24h2, VER_BUILDNUMBER, dwlConditionMask))
+			{
+				isWindows11_24h2 = true;
+			}
+			else if (VerifyVersionInfo(&versionInfo, VER_BUILDNUMBER, dwlConditionMask))
 			{
 				isWindows11 = true;
 			}
@@ -1021,14 +1350,87 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 				isWindows11 = false;
 			}
 
-			// TODO: Remove this debug instruction
-			MESSAGE_BOX_DBG("DWM LUT ATTACH", MB_OK)
-
-			if (isWindows11)
+			if (isWindows11_25h2)
 			{
-				// TODO: Remove this debug instruction
-				MESSAGE_BOX_DBG("DETECTED WINDOWS 11 OS", MB_OK)
+				for (size_t i = 0; i <= moduleInfo.SizeOfImage - sizeof COverlayContext_OverlaysEnabled_bytes_w11_25h2; i++)
+				{
+					unsigned char* address = (unsigned char*)dwmcore + i;
+					if (!COverlayContext_Present_orig_24h2 && sizeof COverlayContext_Present_bytes_w11_25h2 <= moduleInfo.
+						SizeOfImage - i && !aob_match_inverse(address, COverlayContext_Present_bytes_w11_25h2,
+							sizeof COverlayContext_Present_bytes_w11_25h2))
+					{
+						COverlayContext_Present_orig_24h2 = (COverlayContext_Present_24h2_t*)address;
+						COverlayContext_Present_real_orig_24h2 = COverlayContext_Present_orig_24h2;
+					}
+					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 && sizeof
+						COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2 <= moduleInfo.SizeOfImage - i && !
+						aob_match_inverse(
+							address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2,
+							sizeof COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2))
+					{
+						COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 = (
+							COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t*)address;
+					}
+					else if (!COverlayContext_OverlaysEnabled_orig && sizeof COverlayContext_OverlaysEnabled_bytes_w11_25h2
+						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
+							address, COverlayContext_OverlaysEnabled_bytes_w11_25h2,
+							sizeof COverlayContext_OverlaysEnabled_bytes_w11_25h2))
+					{
+						// 25H2 OverlaysEnabled is a direct function match (like W11)
+						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)address;
 
+						// Extract the OverlayTestMode global variable address from the instruction:
+						// 83 3D [rip_offset32] 05 = cmp dword ptr [rip+offset], 5
+						// Global var addr = instruction_addr + 7 + *(int32_t*)(instruction_addr + 2)
+						int rip_offset = *(int*)(address + 2);
+						g_pOverlayTestMode = (int*)(address + 7 + rip_offset);
+					}
+					if (COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 &&
+						COverlayContext_OverlaysEnabled_orig)
+					{
+						break;
+					}
+				}
+			}
+			else if (isWindows11_24h2)
+			{
+				for (size_t i = 0; i <= moduleInfo.SizeOfImage - sizeof COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2; i++)
+				{
+					unsigned char* address = (unsigned char*)dwmcore + i;
+					if (!COverlayContext_Present_orig && sizeof COverlayContext_Present_bytes_w11_24h2 <= moduleInfo.
+						SizeOfImage - i && !aob_match_inverse(address, COverlayContext_Present_bytes_w11_24h2,
+							sizeof COverlayContext_Present_bytes_w11_24h2))
+					{
+						COverlayContext_Present_orig_24h2 = (COverlayContext_Present_24h2_t*)address;
+						COverlayContext_Present_real_orig_24h2 = COverlayContext_Present_orig_24h2;
+					}
+					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig && sizeof
+						COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2 <= moduleInfo.SizeOfImage - i && !
+						aob_match_inverse(
+							address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2,
+							sizeof COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2))
+					{
+						COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 = (
+							COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t*)address;
+					}
+					else if (!COverlayContext_OverlaysEnabled_orig && sizeof COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2
+						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
+							address, COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2,
+							sizeof COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2))
+					{
+
+
+						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)get_relative_address(address, 1, 5);
+					}
+					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+						COverlayContext_OverlaysEnabled_orig)
+					{
+						break;
+					}
+				}
+			}
+			else if (isWindows11)
+			{
 				for (size_t i = 0; i <= moduleInfo.SizeOfImage - sizeof COverlayContext_OverlaysEnabled_bytes_w11; i++)
 				{
 					unsigned char* address = (unsigned char*)dwmcore + i;
@@ -1036,9 +1438,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						SizeOfImage - i && !aob_match_inverse(address, COverlayContext_Present_bytes_w11,
 						                                      sizeof COverlayContext_Present_bytes_w11))
 					{
-						// TODO: Remove this debug instruction
-						MESSAGE_BOX_DBG("DETECTED COverlayContextPresent address", MB_OK)
-
 						COverlayContext_Present_orig = (COverlayContext_Present_t*)address;
 						COverlayContext_Present_real_orig = COverlayContext_Present_orig;
 					}
@@ -1061,8 +1460,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
 						COverlayContext_OverlaysEnabled_orig)
 					{
-						MESSAGE_BOX_DBG("All addresses successfully retrieved", MB_OK)
-
 						break;
 					}
 				}
@@ -1074,8 +1471,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 
 				if (rev >= 706)
 				{
-					MESSAGE_BOX_DBG("Detected recent Windows OS", MB_OK)
-
 					// COverlayContext_DeviceClipBox_offset_w11 += 8;
 				}
 			}
@@ -1121,35 +1516,49 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 			{
 				return FALSE;
 			}
-			char variable_message_states[300];
-			sprintf(variable_message_states, "Current variable states: COverlayContext::Present - %p\t"
-			        "COverlayContext::IsCandidateDirectFlipCompatible - %p\tCOverlayContext::OverlaysEnabled - %p",
-			        COverlayContext_Present_orig,
-			        COverlayContext_IsCandidateDirectFlipCompatbile_orig, COverlayContext_OverlaysEnabled_orig);
-
-			MESSAGE_BOX_DBG(variable_message_states, MB_OK)
-
-			if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
-				COverlayContext_OverlaysEnabled_orig && numLuts != 0)
+			if ((COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+				COverlayContext_OverlaysEnabled_orig) ||
+				(COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 && COverlayContext_OverlaysEnabled_orig) && numLuts != 0)
 
 			{
 				MH_Initialize();
-				MH_CreateHook((PVOID)COverlayContext_Present_orig, (PVOID)COverlayContext_Present_hook,
-				              (PVOID*)&COverlayContext_Present_orig);
-				MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_orig,
-				              (PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_hook,
-				              (PVOID*)&COverlayContext_IsCandidateDirectFlipCompatbile_orig);
+				if (!isWindows11_24h2 && !isWindows11_25h2)
+					MH_CreateHook((PVOID)COverlayContext_Present_orig, (PVOID)COverlayContext_Present_hook,
+								  (PVOID*)&COverlayContext_Present_orig);
+				else
+					MH_CreateHook((PVOID)COverlayContext_Present_orig_24h2, (PVOID)COverlayContext_Present_hook_24h2,
+						(PVOID*)&COverlayContext_Present_orig_24h2);
+
+				if (!isWindows11_24h2 && !isWindows11_25h2)
+					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_orig,
+								  (PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_hook,
+								  (PVOID*)&COverlayContext_IsCandidateDirectFlipCompatbile_orig);
+				else
+					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2,
+						(PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_hook_24h2,
+						(PVOID*)&COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2);
 				MH_CreateHook((PVOID)COverlayContext_OverlaysEnabled_orig, (PVOID)COverlayContext_OverlaysEnabled_hook,
 				              (PVOID*)&COverlayContext_OverlaysEnabled_orig);
 				MH_EnableHook(MH_ALL_HOOKS);
 				LOG_ONLY_ONCE("DWM HOOK DLL INITIALIZATION. START LOGGING")
-				MESSAGE_BOX_DBG("DWM HOOK INITIALIZATION", MB_OK)
+
+				// Disable DirectFlip/MPO by setting DWM's internal OverlayTestMode to 5
+				if (g_pOverlayTestMode != NULL)
+				{
+					*g_pOverlayTestMode = 5;
+					LOG_ONLY_ONCE("Set OverlayTestMode global to 5 in DWM memory")
+				}
 
 				break;
 			}
 			return FALSE;
 		}
 	case DLL_PROCESS_DETACH:
+		// Restore OverlayTestMode
+		if (g_pOverlayTestMode != NULL)
+		{
+			*g_pOverlayTestMode = 0;
+		}
 		MH_Uninitialize();
 		Sleep(100);
 		UninitializeStuff();
