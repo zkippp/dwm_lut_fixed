@@ -273,7 +273,7 @@ namespace DwmLutGUI
                     ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)3072; // TLS 1.2 + 1.3
                     using (var client = new WebClient())
                     {
-                        string content = client.DownloadString("https://raw.githubusercontent.com/edutuu9/dwm_lut_fixed/master/README.md");
+                        string content = client.DownloadString("https://raw.githubusercontent.com/zkippp/dwm_lut_fixed/master/README.md");
                         var match = Regex.Match(content, @"Current Version: (v\d+\.\d+\.\d+)");
                         if (match.Success)
                         {
@@ -292,7 +292,7 @@ namespace DwmLutGUI
 
                                     if (result == System.Windows.MessageBoxResult.Yes)
                                     {
-                                        Process.Start(new ProcessStartInfo($"https://github.com/edutuu9/dwm_lut_fixed/releases/tag/{latestVersion}") { UseShellExecute = true });
+                                        Process.Start(new ProcessStartInfo($"https://github.com/zkippp/dwm_lut_fixed/releases/tag/{latestVersionStr}") { UseShellExecute = true });
                                     }
                                 });
                             }

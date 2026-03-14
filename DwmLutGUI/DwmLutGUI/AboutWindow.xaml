@@ -17,7 +17,7 @@
         <TextBlock HorizontalAlignment="Center" TextAlignment="Center">
             Licensed under GPLv3 <LineBreak /> <LineBreak />
             Source code and releases hosted at <LineBreak />
-            <Hyperlink RequestNavigate="OnRequestNavigate" NavigateUri="https://github.com/edutuu9/dwm_lut_fixed">https://github.com/edutuu9/dwm_lut_fixed</Hyperlink>
+            <Hyperlink RequestNavigate="OnRequestNavigate" NavigateUri="https://github.com/zkippp/dwm_lut_fixed">https://github.com/zkippp/dwm_lut_fixed</Hyperlink>
         </TextBlock>
     </StackPanel>
 </Window>
