@@ -8,7 +8,8 @@
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        SnapsToDevicePixels="True">
+        SnapsToDevicePixels="True"
+        Background="{StaticResource BackgroundBrush}">
     <StackPanel Margin="6">
         <TextBlock FontSize="15" HorizontalAlignment="Center" TextAlignment="Center">
             dwm_lut_fixed by eduu (original by ledoge)
