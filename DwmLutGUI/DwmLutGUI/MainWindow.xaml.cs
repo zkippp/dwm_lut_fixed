@@ -274,25 +274,26 @@ namespace DwmLutGUI
                     using (var client = new WebClient())
                     {
                         string content = client.DownloadString("https://raw.githubusercontent.com/zkippp/dwm_lut_fixed/master/README.md");
-                        var match = Regex.Match(content, @"Current Version: (v\d+\.\d+\.\d+)");
+                        var match = Regex.Match(content, @"Current Version: ([v\d\.\w_]+)");
                         if (match.Success)
                         {
-                            string latestVersionStr = match.Groups[1].Value;
+                            string latestTag = match.Groups[1].Value;
                             string currentVersion = "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
 
-                            if (latestVersionStr != currentVersion)
+                            // Check if the latest tag starts with a different version number
+                            if (!latestTag.StartsWith(currentVersion))
                             {
                                 Dispatcher.Invoke(() =>
                                 {
                                     var result = System.Windows.MessageBox.Show(
-                                        $"A new version is available: {latestVersionStr}\n\nWould you like to download it now?",
+                                        $"A new version is available: {latestTag}\n\nWould you like to download it now?",
                                         "Update Available",
                                         System.Windows.MessageBoxButton.YesNo,
                                         System.Windows.MessageBoxImage.Information);
 
                                     if (result == System.Windows.MessageBoxResult.Yes)
                                     {
-                                        Process.Start(new ProcessStartInfo($"https://github.com/zkippp/dwm_lut_fixed/releases/tag/{latestVersionStr}") { UseShellExecute = true });
+                                        Process.Start(new ProcessStartInfo($"https://github.com/zkippp/dwm_lut_fixed/releases/tag/{latestTag}") { UseShellExecute = true });
                                     }
                                 });
                             }
