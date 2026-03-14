@@ -13,6 +13,8 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using System.Windows.Interop;
 using System.Runtime.InteropServices;
+using System.Net;
+using System.Text.RegularExpressions;
 using ContextMenu = System.Windows.Forms.ContextMenu;
 using MenuItem = System.Windows.Forms.MenuItem;
 using MessageBox = System.Windows.Forms.MessageBox;
@@ -137,6 +139,7 @@ namespace DwmLutGUI
 
                 Closing += MainWindow_Closing;
                 CheckAutostart();
+                CheckForUpdates();
             }
             catch (Exception ex)
             {
@@ -259,6 +262,44 @@ namespace DwmLutGUI
             var result = dlg.ShowDialog();
 
             return result == true ? dlg.FileName : null;
+        }
+
+        private void CheckForUpdates()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    using (var client = new WebClient())
+                    {
+                        string content = client.DownloadString("https://raw.githubusercontent.com/edutuu9/dwm_lut_fixed/master/README.md");
+                        var match = Regex.Match(content, @"Current Version: (v\d+\.\d+\.\d+)");
+                        if (match.Success)
+                        {
+                            string latestVersion = match.Groups[1].Value;
+                            string currentVersion = "v1.0.4";
+
+                            if (latestVersion != currentVersion)
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    var result = MessageBox.Show(
+                                        $"A new version is available: {latestVersion}\n\nWould you like to download it now?",
+                                        "Update Available",
+                                        MessageBoxButtons.YesNo,
+                                        MessageBoxIcon.Information);
+
+                                    if (result == DialogResult.Yes)
+                                    {
+                                        Process.Start(new ProcessStartInfo($"https://github.com/edutuu9/dwm_lut_fixed/releases/tag/{latestVersion}") { UseShellExecute = true });
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+                catch { }
+            });
         }
 
         private void AboutButton_Click(object sender, RoutedEventArgs o)
