@@ -112,8 +112,12 @@ void log_to_file(const char* log_buf)
 #endif
 
 static int g_DynamicSwapChainOffset = -1;
-static ID3D11Texture2D* g_CachedBackBuffer = NULL;
-static ID3D11RenderTargetView* g_CachedRTV = NULL;
+struct RtvCacheEntry {
+	ID3D11Texture2D* texture;
+	ID3D11RenderTargetView* rtv;
+};
+static RtvCacheEntry g_RtvCache[16] = {0};
+static int g_RtvCacheCount = 0;
 
 #if DEBUG_MODE == true
 void print_error(const char* prefix_message)
@@ -288,8 +292,10 @@ SamplerState smp : register(s0);
 Texture2D noiseTex : register(t2);
 SamplerState noiseSmp : register(s1);
 
-int lutSize : register(b0);
-bool hdr : register(b0);
+cbuffer ConstantBuffer : register(b0) {
+    int lutSize;
+    bool hdr;
+};
 
 static float3x3 scrgb_to_bt2100 = {
 2939026994.L / 585553224375.L, 9255011753.L / 3513319346250.L,   173911579.L / 501902763750.L,
@@ -905,6 +911,11 @@ void UninitializeStuff()
 		RELEASE_IF_NOT_NULL(texture[i])
 		RELEASE_IF_NOT_NULL(textureView[i])
 	}
+	for (int i = 0; i < g_RtvCacheCount; i++)
+	{
+		RELEASE_IF_NOT_NULL(g_RtvCache[i].rtv)
+	}
+	g_RtvCacheCount = 0;
 	RELEASE_IF_NOT_NULL(noiseSamplerState)
 	RELEASE_IF_NOT_NULL(noiseTextureView)
 	RELEASE_IF_NOT_NULL(constantBuffer)
@@ -983,20 +994,30 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 	}
 
 	backBufferDesc = newBackBufferDesc;
-	if (index == 0) // Only cache for SDR (index 0) to avoid complexity with multi-monitor HDR switching for now
+	renderTargetView = NULL;
+	for (int i = 0; i < g_RtvCacheCount; i++)
 	{
-		if (g_CachedBackBuffer != backBuffer)
+		if (g_RtvCache[i].texture == backBuffer)
 		{
-			RELEASE_IF_NOT_NULL(g_CachedRTV)
-			EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &g_CachedRTV))
-			g_CachedBackBuffer = backBuffer;
+			renderTargetView = g_RtvCache[i].rtv;
+			renderTargetView->AddRef();
+			break;
 		}
-		renderTargetView = g_CachedRTV;
-		renderTargetView->AddRef();
 	}
-	else
+
+	if (renderTargetView == NULL)
 	{
-		EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &renderTargetView))
+		if (g_RtvCacheCount >= 16)
+		{
+			RELEASE_IF_NOT_NULL(g_RtvCache[0].rtv)
+			for (int i = 0; i < 15; i++) g_RtvCache[i] = g_RtvCache[i+1];
+			g_RtvCacheCount--;
+		}
+		EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &g_RtvCache[g_RtvCacheCount].rtv))
+		g_RtvCache[g_RtvCacheCount].texture = backBuffer;
+		renderTargetView = g_RtvCache[g_RtvCacheCount].rtv;
+		renderTargetView->AddRef();
+		g_RtvCacheCount++;
 	}
 
 	const D3D11_VIEWPORT d3d11_viewport(0, 0, (float)backBufferDesc.Width, (float)backBufferDesc.Height, 0.0f, 1.0f);
@@ -1033,18 +1054,19 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 
 	deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
 
+	// Optimization: Copy the relevant parts of the backbuffer to our staging texture once.
+	// We copy the entire backbuffer area currently used to be safe and efficient.
+	D3D11_BOX sourceBox;
+	sourceBox.left = 0;
+	sourceBox.top = 0;
+	sourceBox.front = 0;
+	sourceBox.right = backBufferDesc.Width;
+	sourceBox.bottom = backBufferDesc.Height;
+	sourceBox.back = 1;
+	deviceContext->CopySubresourceRegion((ID3D11Resource*)texture[index], 0, 0, 0, 0, (ID3D11Resource*)backBuffer, 0, &sourceBox);
+
 	for (int i = 0; i < numRects; i++)
 	{
-		D3D11_BOX sourceRegion;
-		sourceRegion.left = rects[i].left;
-		sourceRegion.right = rects[i].right;
-		sourceRegion.top = rects[i].top;
-		sourceRegion.bottom = rects[i].bottom;
-		sourceRegion.front = 0;
-		sourceRegion.back = 1;
-
-		deviceContext->CopySubresourceRegion((ID3D11Resource*)texture[index], 0, rects[i].left,
-		                                     rects[i].top, 0, (ID3D11Resource*)backBuffer, 0, &sourceRegion);
 		DrawRectangle(&rects[i], index);
 	}
 
