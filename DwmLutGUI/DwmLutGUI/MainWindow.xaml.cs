@@ -285,7 +285,7 @@ namespace DwmLutGUI
                                 Dispatcher.Invoke(() =>
                                 {
                                     var result = System.Windows.MessageBox.Show(
-                                        $"A new version is available: {latestVersion}\n\nWould you like to download it now?",
+                                        $"A new version is available: {latestVersionStr}\n\nWould you like to download it now?",
                                         "Update Available",
                                         System.Windows.MessageBoxButton.YesNo,
                                         System.Windows.MessageBoxImage.Information);
