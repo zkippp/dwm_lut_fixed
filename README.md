@@ -5,6 +5,7 @@
 ## Credits
 - **Original Author**: [ledoge](https://github.com/ledoge/dwm_lut)
 - **25H2 Update & Maintenance**: [Eduu](https://github.com/zkippp/dwm_lut_fixed)
+- **Our discord**: [Discord Invite](https://discord.gg/Y9Zcf8jGAN)
 
 ## Dependencies
 - Visual C++ runtime (https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/)
