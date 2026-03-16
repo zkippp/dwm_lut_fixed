@@ -2,6 +2,8 @@
 #include "pch.h"
 
 #include <io.h>
+#include <map>
+#include <mutex>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -116,9 +118,37 @@ struct RtvCacheEntry {
 	ID3D11Texture2D* texture;
 	ID3D11RenderTargetView* rtv;
 };
-static RtvCacheEntry g_RtvCache[16] = {0};
-static int g_RtvCacheCount = 0;
 
+struct DeviceContext {
+	ID3D11Device* device = NULL;
+	ID3D11DeviceContext* deviceContext = NULL;
+	ID3D11VertexShader* vertexShader = NULL;
+	ID3D11PixelShader* pixelShader = NULL;
+	ID3D11InputLayout* inputLayout = NULL;
+	ID3D11Buffer* vertexBuffer = NULL;
+	UINT numVerts = 4;
+	UINT stride = 4 * sizeof(float);
+	UINT offset = 0;
+	D3D11_TEXTURE2D_DESC backBufferDesc = {};
+	D3D11_TEXTURE2D_DESC textureDesc[2] = {};
+	ID3D11SamplerState* samplerState = NULL;
+	ID3D11Texture2D* texture[2] = {NULL, NULL};
+	ID3D11ShaderResourceView* textureView[2] = {NULL, NULL};
+	ID3D11SamplerState* noiseSamplerState = NULL;
+	ID3D11ShaderResourceView* noiseTextureView = NULL;
+	ID3D11Buffer* constantBuffer = NULL;
+
+	RtvCacheEntry rtvCache[16] = {};
+	int rtvCacheCount = 0;
+
+	int lastLutSize[2] = {-1, -1};
+	bool lastIsHdr[2] = {false, false};
+
+	ID3D11ShaderResourceView* lutTextureViews[64] = {};
+};
+
+std::map<ID3D11Device*, DeviceContext*> g_deviceContexts;
+std::mutex g_deviceMutex;
 #if DEBUG_MODE == true
 void print_error(const char* prefix_message)
 {
@@ -400,28 +430,7 @@ float4 PS(VS_OUTPUT input) : SV_TARGET{
 }
 )";
 
-ID3D11Device* device;
-ID3D11DeviceContext* deviceContext;
-ID3D11VertexShader* vertexShader;
-ID3D11PixelShader* pixelShader;
-ID3D11InputLayout* inputLayout;
-
-ID3D11Buffer* vertexBuffer;
-UINT numVerts;
-UINT stride;
-UINT offset;
-
-D3D11_TEXTURE2D_DESC backBufferDesc;
-D3D11_TEXTURE2D_DESC textureDesc[2];
-
-ID3D11SamplerState* samplerState;
-ID3D11Texture2D* texture[2];
-ID3D11ShaderResourceView* textureView[2];
-
-ID3D11SamplerState* noiseSamplerState;
-ID3D11ShaderResourceView* noiseTextureView;
-
-ID3D11Buffer* constantBuffer;
+// Removed global D3D variables - now inside DeviceContext
 
 struct lutData
 {
@@ -429,14 +438,14 @@ struct lutData
 	int top;
 	int size;
 	bool isHdr;
-	ID3D11ShaderResourceView* textureView;
+	// textureView is now specific to the GPU, retrieved from DeviceContext
 	float* rawLut;
 };
 
-void DrawRectangle(struct tagRECT* rect, int index)
+void DrawRectangle(struct tagRECT* rect, int index, DeviceContext* ctx)
 {
-	float width = backBufferDesc.Width;
-	float height = backBufferDesc.Height;
+	float width = ctx->backBufferDesc.Width;
+	float height = ctx->backBufferDesc.Height;
 
 	float screenLeft = rect->left / width;
 	float screenTop = rect->top / height;
@@ -448,8 +457,8 @@ void DrawRectangle(struct tagRECT* rect, int index)
 	float right = screenRight * 2 - 1;
 	float bottom = screenBottom * -2 + 1;
 
-	width = textureDesc[index].Width;
-	height = textureDesc[index].Height;
+	width = ctx->textureDesc[index].Width;
+	height = ctx->textureDesc[index].Height;
 	float texLeft = rect->left / width;
 	float texTop = rect->top / height;
 	float texRight = rect->right / width;
@@ -463,13 +472,13 @@ void DrawRectangle(struct tagRECT* rect, int index)
 	};
 
 	D3D11_MAPPED_SUBRESOURCE resource;
-	EXECUTE_WITH_LOG(deviceContext->Map(vertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource))
-	memcpy(resource.pData, vertexData, stride * numVerts);
-	deviceContext->Unmap(vertexBuffer, 0);
+	EXECUTE_WITH_LOG(ctx->deviceContext->Map(ctx->vertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource))
+	memcpy(resource.pData, vertexData, ctx->stride * ctx->numVerts);
+	ctx->deviceContext->Unmap(ctx->vertexBuffer, 0);
 
-	deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+	ctx->deviceContext->IASetVertexBuffers(0, 1, &ctx->vertexBuffer, &ctx->stride, &ctx->offset);
 
-	deviceContext->Draw(numVerts, 0);
+	ctx->deviceContext->Draw(ctx->numVerts, 0);
 }
 
 int numLuts;
@@ -566,7 +575,6 @@ bool AddLUTs(char* folder)
 			if (sscanf(findData.cFileName, "%d_%d", &lut->left, &lut->top) == 2)
 			{
 				lut->isHdr = strstr(fileName, "hdr") != NULL;
-				lut->textureView = NULL;
 				if (!ParseLUT(lut, filePath))
 				{
 					LOG_ONLY_ONCE("LUT could not be parsed")
@@ -623,16 +631,19 @@ void UnsetLUTActive(void* target)
 	}
 }
 
-lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
+lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 {
 	static void* last_context = NULL;
 	static lutData* last_lut = NULL;
 	static bool last_hdr = false;
+	static int last_index = -1;
 
 	if (context == last_context && last_lut != NULL && last_hdr == hdr)
 	{
+		if (out_index) *out_index = last_index;
 		return last_lut;
 	}
+
 
 	int left, top;
 
@@ -693,6 +704,8 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 			last_context = context;
 			last_lut = &luts[i];
 			last_hdr = hdr;
+			last_index = i;
+			if (out_index) *out_index = i;
 			return &luts[i];
 		}
 	}
@@ -705,6 +718,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 		{
 			if (luts[i].left == left && luts[i].top == top && luts[i].isHdr != hdr)
 			{
+				if (out_index) *out_index = i;
 				return &luts[i];
 			}
 		}
@@ -716,6 +730,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 	{
 		if (luts[i].isHdr == hdr)
 		{
+			if (out_index) *out_index = i;
 			return &luts[i];
 		}
 	}
@@ -726,24 +741,26 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr)
 		last_context = context;
 		last_lut = &luts[0];
 		last_hdr = hdr;
+		last_index = 0;
+		if (out_index) *out_index = 0;
 		return &luts[0];
 	}
 
 	return NULL;
 }
 
-void InitializeStuff(ID3D11Device* inputDevice)
+void InitializeDeviceContext(ID3D11Device* inputDevice, DeviceContext* ctx)
 {
 	try
 	{
-		device = inputDevice;
-		device->AddRef();
+		ctx->device = inputDevice;
+		ctx->device->AddRef();
 		LOG_ONLY_ONCE("Device successfully gathered")
-		LOG_ADDRESS("The device address is: ", device)
+		LOG_ADDRESS("The device address is: ", ctx->device)
 
-		device->GetImmediateContext(&deviceContext);
+		ctx->device->GetImmediateContext(&ctx->deviceContext);
 		LOG_ONLY_ONCE("Got context after device")
-		LOG_ADDRESS("The Device context is located at address: ", deviceContext)
+		LOG_ADDRESS("The Device context is located at address: ", ctx->deviceContext)
 		{
 			ID3DBlob* vsBlob;
 			ID3DBlob* compile_error_interface;
@@ -754,8 +771,8 @@ void InitializeStuff(ID3D11Device* inputDevice)
 
 
 			LOG_ONLY_ONCE("Vertex shader compiled successfully")
-			EXECUTE_WITH_LOG(device->CreateVertexShader(vsBlob->GetBufferPointer(),
-				vsBlob->GetBufferSize(), NULL, &vertexShader))
+			EXECUTE_WITH_LOG(ctx->device->CreateVertexShader(vsBlob->GetBufferPointer(),
+				vsBlob->GetBufferSize(), NULL, &ctx->vertexShader))
 
 
 			LOG_ONLY_ONCE("Vertex shader created successfully")
@@ -767,9 +784,9 @@ void InitializeStuff(ID3D11Device* inputDevice)
 					D3D11_INPUT_PER_VERTEX_DATA, 0
 				}
 			};
-			EXECUTE_WITH_LOG(device->CreateInputLayout(inputElementDesc, ARRAYSIZE(inputElementDesc),
+			EXECUTE_WITH_LOG(ctx->device->CreateInputLayout(inputElementDesc, ARRAYSIZE(inputElementDesc),
 				vsBlob->GetBufferPointer(),
-				vsBlob->GetBufferSize(), &inputLayout))
+				vsBlob->GetBufferSize(), &ctx->inputLayout))
 
 			vsBlob->Release();
 		}
@@ -781,22 +798,22 @@ void InitializeStuff(ID3D11Device* inputDevice)
 					compile_error_interface), compile_error_interface)
 
 			LOG_ONLY_ONCE("Pixel shader compiled successfully")
-			device->CreatePixelShader(psBlob->GetBufferPointer(),
-			                          psBlob->GetBufferSize(), NULL, &pixelShader);
+			ctx->device->CreatePixelShader(psBlob->GetBufferPointer(),
+			                          psBlob->GetBufferSize(), NULL, &ctx->pixelShader);
 			psBlob->Release();
 		}
 		{
-			stride = 4 * sizeof(float);
-			numVerts = 4;
-			offset = 0;
+			ctx->stride = 4 * sizeof(float);
+			ctx->numVerts = 4;
+			ctx->offset = 0;
 
 			D3D11_BUFFER_DESC vertexBufferDesc = {};
-			vertexBufferDesc.ByteWidth = stride * numVerts;
+			vertexBufferDesc.ByteWidth = ctx->stride * ctx->numVerts;
 			vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
 			vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 			vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-			EXECUTE_WITH_LOG(device->CreateBuffer(&vertexBufferDesc, NULL, &vertexBuffer))
+			EXECUTE_WITH_LOG(ctx->device->CreateBuffer(&vertexBufferDesc, NULL, &ctx->vertexBuffer))
 		}
 		{
 			D3D11_SAMPLER_DESC samplerDesc = {};
@@ -804,11 +821,13 @@ void InitializeStuff(ID3D11Device* inputDevice)
 			samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 			samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
 
-			EXECUTE_WITH_LOG(device->CreateSamplerState(&samplerDesc, &samplerState))
+			EXECUTE_WITH_LOG(ctx->device->CreateSamplerState(&samplerDesc, &ctx->samplerState))
 		}
 		for (int i = 0; i < numLuts; i++)
 		{
 			lutData* lut = &luts[i];
+            
+            if (!lut->rawLut) continue; // Unlikely, but just in case it was partially loaded
 
 			D3D11_TEXTURE3D_DESC desc = {};
 			desc.Width = lut->size;
@@ -825,11 +844,10 @@ void InitializeStuff(ID3D11Device* inputDevice)
 			initData.SysMemSlicePitch = lut->size * lut->size * 4 * sizeof(float);
 
 			ID3D11Texture3D* tex;
-			EXECUTE_WITH_LOG(device->CreateTexture3D(&desc, &initData, &tex))
-			EXECUTE_WITH_LOG(device->CreateShaderResourceView((ID3D11Resource*)tex, NULL, &luts[i].textureView))
+			EXECUTE_WITH_LOG(ctx->device->CreateTexture3D(&desc, &initData, &tex))
+			EXECUTE_WITH_LOG(ctx->device->CreateShaderResourceView((ID3D11Resource*)tex, NULL, &ctx->lutTextureViews[i]))
 			tex->Release();
-			free(lut->rawLut);
-			lut->rawLut = NULL;
+			// No longer freeing rawLut here because other per-device Contexts might need it later.
 		}
 		{
 			D3D11_SAMPLER_DESC samplerDesc = {};
@@ -837,7 +855,7 @@ void InitializeStuff(ID3D11Device* inputDevice)
 			samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
 			samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
 
-			EXECUTE_WITH_LOG(device->CreateSamplerState(&samplerDesc, &noiseSamplerState))
+			EXECUTE_WITH_LOG(ctx->device->CreateSamplerState(&samplerDesc, &ctx->noiseSamplerState))
 		}
 		{
 			D3D11_TEXTURE2D_DESC desc = {};
@@ -866,8 +884,8 @@ void InitializeStuff(ID3D11Device* inputDevice)
 			initData.SysMemPitch = sizeof(noise[0]);
 
 			ID3D11Texture2D* tex;
-			EXECUTE_WITH_LOG(device->CreateTexture2D(&desc, &initData, &tex))
-			EXECUTE_WITH_LOG(device->CreateShaderResourceView((ID3D11Resource*)tex, NULL, &noiseTextureView))
+			EXECUTE_WITH_LOG(ctx->device->CreateTexture2D(&desc, &initData, &tex))
+			EXECUTE_WITH_LOG(ctx->device->CreateShaderResourceView((ID3D11Resource*)tex, NULL, &ctx->noiseTextureView))
 			tex->Release();
 		}
 		{
@@ -877,7 +895,7 @@ void InitializeStuff(ID3D11Device* inputDevice)
 			constantBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
 			constantBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-			EXECUTE_WITH_LOG(device->CreateBuffer(&constantBufferDesc, NULL, &constantBuffer))
+			EXECUTE_WITH_LOG(ctx->device->CreateBuffer(&constantBufferDesc, NULL, &ctx->constantBuffer))
 			LOG_ONLY_ONCE("Final buffer created in InitializeStuff")
 		}
 	}
@@ -897,39 +915,64 @@ void InitializeStuff(ID3D11Device* inputDevice)
 	}
 }
 
+DeviceContext* GetOrCreateDeviceContext(ID3D11Device* dev)
+{
+    std::lock_guard<std::mutex> lock(g_deviceMutex);
+    auto it = g_deviceContexts.find(dev);
+    if (it != g_deviceContexts.end()) return it->second;
+    DeviceContext* ctx = new DeviceContext();
+    InitializeDeviceContext(dev, ctx);
+    g_deviceContexts[dev] = ctx;
+    return ctx;
+}
+
 void UninitializeStuff()
 {
-	RELEASE_IF_NOT_NULL(device)
-	RELEASE_IF_NOT_NULL(deviceContext)
-	RELEASE_IF_NOT_NULL(vertexShader)
-	RELEASE_IF_NOT_NULL(pixelShader)
-	RELEASE_IF_NOT_NULL(inputLayout)
-	RELEASE_IF_NOT_NULL(vertexBuffer)
-	RELEASE_IF_NOT_NULL(samplerState)
-	for (int i = 0; i < 2; i++)
+	std::lock_guard<std::mutex> lock(g_deviceMutex);
+	for (auto& pair : g_deviceContexts)
 	{
-		RELEASE_IF_NOT_NULL(texture[i])
-		RELEASE_IF_NOT_NULL(textureView[i])
+		DeviceContext* ctx = pair.second;
+		RELEASE_IF_NOT_NULL(ctx->device)
+		RELEASE_IF_NOT_NULL(ctx->deviceContext)
+		RELEASE_IF_NOT_NULL(ctx->vertexShader)
+		RELEASE_IF_NOT_NULL(ctx->pixelShader)
+		RELEASE_IF_NOT_NULL(ctx->inputLayout)
+		RELEASE_IF_NOT_NULL(ctx->vertexBuffer)
+		RELEASE_IF_NOT_NULL(ctx->samplerState)
+		for (int i = 0; i < 2; i++)
+		{
+			RELEASE_IF_NOT_NULL(ctx->texture[i])
+			RELEASE_IF_NOT_NULL(ctx->textureView[i])
+		}
+		for (int i = 0; i < ctx->rtvCacheCount; i++)
+		{
+			RELEASE_IF_NOT_NULL(ctx->rtvCache[i].rtv)
+		}
+		ctx->rtvCacheCount = 0;
+		RELEASE_IF_NOT_NULL(ctx->noiseSamplerState)
+		RELEASE_IF_NOT_NULL(ctx->noiseTextureView)
+		RELEASE_IF_NOT_NULL(ctx->constantBuffer)
+		for (int i = 0; i < numLuts; i++)
+		{
+			RELEASE_IF_NOT_NULL(ctx->lutTextureViews[i])
+		}
+		delete ctx;
 	}
-	for (int i = 0; i < g_RtvCacheCount; i++)
-	{
-		RELEASE_IF_NOT_NULL(g_RtvCache[i].rtv)
-	}
-	g_RtvCacheCount = 0;
-	RELEASE_IF_NOT_NULL(noiseSamplerState)
-	RELEASE_IF_NOT_NULL(noiseTextureView)
-	RELEASE_IF_NOT_NULL(constantBuffer)
+	g_deviceContexts.clear();
+
 	for (int i = 0; i < numLuts; i++)
 	{
-		free(luts[i].rawLut);
-		RELEASE_IF_NOT_NULL(luts[i].textureView)
+		if (luts[i].rawLut) {
+			free(luts[i].rawLut);
+			luts[i].rawLut = NULL;
+		}
 	}
 	free(luts);
 	free(lutTargets);
 }
 
 
-bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagRECT* rects, int numRects)
+bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagRECT* rects, int numRects, DeviceContext* ctx)
 {
 	ID3D11RenderTargetView* renderTargetView;
 
@@ -945,7 +988,7 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 	{
 		index = 0;
 	}
-	else if (newBackBufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
+	else if (newBackBufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT || newBackBufferDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
 	{
 		index = 1;
 
@@ -955,8 +998,9 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 		}
 	}
 
+	int lut_index = 0;
 	lutData* lut;
-	if (index == -1 || !(lut = GetLUTDataFromCOverlayContext(cOverlayContext, index == 1)))
+	if (index == -1 || !(lut = GetLUTDataFromCOverlayContext(cOverlayContext, index == 1, &lut_index)))
 	{
 		char message[256];
 		sprintf(message, "LUT not found for index %d", index);
@@ -964,13 +1008,13 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 		return false;
 	}
 
-	D3D11_TEXTURE2D_DESC oldTextureDesc = textureDesc[index];
+	D3D11_TEXTURE2D_DESC oldTextureDesc = ctx->textureDesc[index];
 	if (newBackBufferDesc.Width > oldTextureDesc.Width || newBackBufferDesc.Height > oldTextureDesc.Height)
 	{
-		if (texture[index] != NULL)
+		if (ctx->texture[index] != NULL)
 		{
-			texture[index]->Release();
-			textureView[index]->Release();
+			ctx->texture[index]->Release();
+			ctx->textureView[index]->Release();
 		}
 
 		UINT newWidth = max(newBackBufferDesc.Width, oldTextureDesc.Width);
@@ -986,20 +1030,20 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 		newTextureDesc.CPUAccessFlags = 0;
 		newTextureDesc.MiscFlags = 0;
 
-		textureDesc[index] = newTextureDesc;
+		ctx->textureDesc[index] = newTextureDesc;
 
-		EXECUTE_WITH_LOG(device->CreateTexture2D(&textureDesc[index], NULL, &texture[index]))
+		EXECUTE_WITH_LOG(ctx->device->CreateTexture2D(&ctx->textureDesc[index], NULL, &ctx->texture[index]))
 		EXECUTE_WITH_LOG(
-			device->CreateShaderResourceView((ID3D11Resource*)texture[index], NULL, &textureView[index]))
+			ctx->device->CreateShaderResourceView((ID3D11Resource*)ctx->texture[index], NULL, &ctx->textureView[index]))
 	}
 
-	backBufferDesc = newBackBufferDesc;
+	ctx->backBufferDesc = newBackBufferDesc;
 	renderTargetView = NULL;
-	for (int i = 0; i < g_RtvCacheCount; i++)
+	for (int i = 0; i < ctx->rtvCacheCount; i++)
 	{
-		if (g_RtvCache[i].texture == backBuffer)
+		if (ctx->rtvCache[i].texture == backBuffer)
 		{
-			renderTargetView = g_RtvCache[i].rtv;
+			renderTargetView = ctx->rtvCache[i].rtv;
 			renderTargetView->AddRef();
 			break;
 		}
@@ -1007,35 +1051,35 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 
 	if (renderTargetView == NULL)
 	{
-		if (g_RtvCacheCount >= 16)
+		if (ctx->rtvCacheCount >= 16)
 		{
-			RELEASE_IF_NOT_NULL(g_RtvCache[0].rtv)
-			for (int i = 0; i < 15; i++) g_RtvCache[i] = g_RtvCache[i+1];
-			g_RtvCacheCount--;
+			RELEASE_IF_NOT_NULL(ctx->rtvCache[0].rtv)
+			for (int i = 0; i < 15; i++) ctx->rtvCache[i] = ctx->rtvCache[i+1];
+			ctx->rtvCacheCount--;
 		}
-		EXECUTE_WITH_LOG(device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &g_RtvCache[g_RtvCacheCount].rtv))
-		g_RtvCache[g_RtvCacheCount].texture = backBuffer;
-		renderTargetView = g_RtvCache[g_RtvCacheCount].rtv;
+		EXECUTE_WITH_LOG(ctx->device->CreateRenderTargetView((ID3D11Resource*)backBuffer, NULL, &ctx->rtvCache[ctx->rtvCacheCount].rtv))
+		ctx->rtvCache[ctx->rtvCacheCount].texture = backBuffer;
+		renderTargetView = ctx->rtvCache[ctx->rtvCacheCount].rtv;
 		renderTargetView->AddRef();
-		g_RtvCacheCount++;
+		ctx->rtvCacheCount++;
 	}
 
-	const D3D11_VIEWPORT d3d11_viewport(0, 0, (float)backBufferDesc.Width, (float)backBufferDesc.Height, 0.0f, 1.0f);
-	deviceContext->RSSetViewports(1, &d3d11_viewport);
+	const D3D11_VIEWPORT d3d11_viewport(0, 0, (float)ctx->backBufferDesc.Width, (float)ctx->backBufferDesc.Height, 0.0f, 1.0f);
+	ctx->deviceContext->RSSetViewports(1, &d3d11_viewport);
 
-	deviceContext->OMSetRenderTargets(1, &renderTargetView, NULL);
+	ctx->deviceContext->OMSetRenderTargets(1, &renderTargetView, NULL);
 	renderTargetView->Release();
 
-	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	deviceContext->IASetInputLayout(inputLayout);
-	deviceContext->VSSetShader(vertexShader, NULL, 0);
-	deviceContext->PSSetShader(pixelShader, NULL, 0);
-	deviceContext->PSSetSamplers(0, 1, &samplerState);
-	deviceContext->PSSetSamplers(1, 1, &noiseSamplerState);
+	ctx->deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	ctx->deviceContext->IASetInputLayout(ctx->inputLayout);
+	ctx->deviceContext->VSSetShader(ctx->vertexShader, NULL, 0);
+	ctx->deviceContext->PSSetShader(ctx->pixelShader, NULL, 0);
+	ctx->deviceContext->PSSetSamplers(0, 1, &ctx->samplerState);
+	ctx->deviceContext->PSSetSamplers(1, 1, &ctx->noiseSamplerState);
 
-	deviceContext->PSSetShaderResources(0, 1, &textureView[index]);
-	deviceContext->PSSetShaderResources(1, 1, &lut->textureView);
-	deviceContext->PSSetShaderResources(2, 1, &noiseTextureView);
+	ctx->deviceContext->PSSetShaderResources(0, 1, &ctx->textureView[index]);
+	ctx->deviceContext->PSSetShaderResources(1, 1, &ctx->lutTextureViews[lut_index]);
+	ctx->deviceContext->PSSetShaderResources(2, 1, &ctx->noiseTextureView);
 
 	static int lastLutSize[2] = {-1, -1};
 	static bool lastIsHdr[2] = {false, false};
@@ -1044,15 +1088,15 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 	{
 		int constantData[4] = {lut->size, index == 1};
 		D3D11_MAPPED_SUBRESOURCE resource;
-		EXECUTE_WITH_LOG(deviceContext->Map((ID3D11Resource*)constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource))
+		EXECUTE_WITH_LOG(ctx->deviceContext->Map((ID3D11Resource*)ctx->constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &resource))
 		memcpy(resource.pData, constantData, sizeof(constantData));
-		deviceContext->Unmap((ID3D11Resource*)constantBuffer, 0);
+		ctx->deviceContext->Unmap((ID3D11Resource*)ctx->constantBuffer, 0);
 		
 		lastLutSize[index] = lut->size;
 		lastIsHdr[index] = (index == 1);
 	}
 
-	deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
+	ctx->deviceContext->PSSetConstantBuffers(0, 1, &ctx->constantBuffer);
 
 	// Optimization: Copy the relevant parts of the backbuffer to our staging texture once.
 	// We copy the entire backbuffer area currently used to be safe and efficient.
@@ -1060,14 +1104,14 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 	sourceBox.left = 0;
 	sourceBox.top = 0;
 	sourceBox.front = 0;
-	sourceBox.right = backBufferDesc.Width;
-	sourceBox.bottom = backBufferDesc.Height;
+	sourceBox.right = ctx->backBufferDesc.Width;
+	sourceBox.bottom = ctx->backBufferDesc.Height;
 	sourceBox.back = 1;
-	deviceContext->CopySubresourceRegion((ID3D11Resource*)texture[index], 0, 0, 0, 0, (ID3D11Resource*)backBuffer, 0, &sourceBox);
+	ctx->deviceContext->CopySubresourceRegion((ID3D11Resource*)ctx->texture[index], 0, 0, 0, 0, (ID3D11Resource*)backBuffer, 0, &sourceBox);
 
 	for (int i = 0; i < numRects; i++)
 	{
-		DrawRectangle(&rects[i], index);
+		DrawRectangle(&rects[i], index, ctx);
 	}
 
 	return true;
@@ -1077,21 +1121,18 @@ bool ApplyLUT(void* cOverlayContext, IDXGISwapChain* swapChain, struct tagRECT* 
 {
 	try
 	{
-		if (!device)
-		{
-			LOG_ONLY_ONCE("Initializing stuff in ApplyLUT")
-			ID3D11Device* dev;
-			EXECUTE_WITH_LOG(swapChain->GetDevice(IID_ID3D11Device, (void**)&dev))
-			InitializeStuff(dev);
-			dev->Release();
-		}
+		ID3D11Device* dev;
+		EXECUTE_WITH_LOG(swapChain->GetDevice(IID_ID3D11Device, (void**)&dev))
+		DeviceContext* ctx = GetOrCreateDeviceContext(dev);
+
 		LOG_ONLY_ONCE("Init done, continuing with LUT application")
 
 		ID3D11Texture2D* backBuffer;
 		EXECUTE_WITH_LOG(swapChain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&backBuffer))
 
-		bool result = RenderLUT(cOverlayContext, backBuffer, rects, numRects);
+		bool result = RenderLUT(cOverlayContext, backBuffer, rects, numRects, ctx);
 		backBuffer->Release();
+		dev->Release();
 		return result;
 	}
 	catch (std::exception& ex)
@@ -1115,15 +1156,12 @@ bool ApplyLUTDirect(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct t
 {
 	try
 	{
-		if (!device)
-		{
-			LOG_ONLY_ONCE("Initializing from texture device (25H2)")
-			ID3D11Device* dev;
-			backBuffer->GetDevice(&dev);
-			InitializeStuff(dev);
-			dev->Release();
-		}
-		return RenderLUT(cOverlayContext, backBuffer, rects, numRects);
+		ID3D11Device* dev;
+		backBuffer->GetDevice(&dev);
+		DeviceContext* ctx = GetOrCreateDeviceContext(dev);
+		bool result = RenderLUT(cOverlayContext, backBuffer, rects, numRects, ctx);
+		dev->Release();
+		return result;
 	}
 	catch (std::exception& ex)
 	{

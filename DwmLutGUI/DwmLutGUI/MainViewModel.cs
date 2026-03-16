@@ -92,6 +92,7 @@ namespace DwmLutGUI
                 new XAttribute("autostart_asked", _autostartAsked),
                 _allMonitors.Select(x =>
                     new XElement("monitor", new XAttribute("path", x.DevicePath),
+                        new XAttribute("name", x.Name),
                         x.SdrLutPath != null ? new XAttribute("sdr_lut", x.SdrLutPath) : null,
                         x.HdrLutPath != null ? new XAttribute("hdr_lut", x.HdrLutPath) : null,
                         x.SdrLuts != null ? new XElement("sdr_luts", x.SdrLuts.Select(s => new XElement("sdr_lut", s))) : null)));
@@ -220,7 +221,8 @@ namespace DwmLutGUI
                 string hdrLutPath = null;
 
                 var settings = config?.FirstOrDefault(x => (uint?)x.Attribute("id") == deviceId) ??
-                               config?.FirstOrDefault(x => (string)x.Attribute("path") == devicePath);
+                               config?.FirstOrDefault(x => (string)x.Attribute("path") == devicePath) ??
+                               config?.FirstOrDefault(x => (string)x.Attribute("name") == name);
 
                 if (settings != null)
                 {
@@ -310,7 +312,17 @@ namespace DwmLutGUI
 
         public void OnDisplaySettingsChanged(object sender, EventArgs e)
         {
+            var oldState = string.Join(";", Monitors.Select(m => m.Position + "|" + m.SdrLutPath + "|" + m.HdrLutPath));
+            
             UpdateMonitors();
+            
+            var newState = string.Join(";", Monitors.Select(m => m.Position + "|" + m.SdrLutPath + "|" + m.HdrLutPath));
+
+            if (oldState == newState)
+            {
+                return;
+            }
+
             if (!_configChanged)
             {
                 ReInject();
