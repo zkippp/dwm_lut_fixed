@@ -278,24 +278,26 @@ namespace DwmLutGUI
                         if (match.Success)
                         {
                             string latestTag = match.Groups[1].Value;
-                            string currentVersion = "v" + Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
-
-                            // Check if the latest tag starts with a different version number
-                            if (!latestTag.StartsWith(currentVersion))
+                            string remoteVerStr = latestTag.TrimStart('v').Split('_')[0];
+                            
+                            if (Version.TryParse(remoteVerStr, out Version remoteVersion))
                             {
-                                Dispatcher.Invoke(() =>
+                                if (remoteVersion > Assembly.GetExecutingAssembly().GetName().Version)
                                 {
-                                    var result = System.Windows.MessageBox.Show(
-                                        $"A new version is available: {latestTag}\n\nWould you like to download it now?",
-                                        "Update Available",
-                                        System.Windows.MessageBoxButton.YesNo,
-                                        System.Windows.MessageBoxImage.Information);
-
-                                    if (result == System.Windows.MessageBoxResult.Yes)
+                                    Dispatcher.Invoke(() =>
                                     {
-                                        Process.Start(new ProcessStartInfo($"https://github.com/zkippp/dwm_lut_fixed/releases/tag/{latestTag}") { UseShellExecute = true });
-                                    }
-                                });
+                                        var result = System.Windows.MessageBox.Show(
+                                            $"A new version is available: {latestTag}\n\nWould you like to download it now?",
+                                            "Update Available",
+                                            System.Windows.MessageBoxButton.YesNo,
+                                            System.Windows.MessageBoxImage.Information);
+
+                                        if (result == System.Windows.MessageBoxResult.Yes)
+                                        {
+                                            Process.Start(new ProcessStartInfo($"https://github.com/zkippp/dwm_lut_fixed/releases/tag/{latestTag}") { UseShellExecute = true });
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
