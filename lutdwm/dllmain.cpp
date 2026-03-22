@@ -657,12 +657,6 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		left = (int)rect[0];
 		top = (int)rect[1];
 
-
-
-		if ((left == 0 && top == 0) || (left < -2000 || left > 10000)) {
-			left = 0;
-			top = 0;
-		}
 	}
 	else if (isWindows11_24h2)
 	{
@@ -725,26 +719,6 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 	}
 
 
-
-	for (int i = 0; i < numLuts; i++)
-	{
-		if (luts[i].isHdr == hdr)
-		{
-			if (out_index) *out_index = i;
-			return &luts[i];
-		}
-	}
-
-
-	if (numLuts > 0) 
-	{
-		last_context = context;
-		last_lut = &luts[0];
-		last_hdr = hdr;
-		last_index = 0;
-		if (out_index) *out_index = 0;
-		return &luts[0];
-	}
 
 	return NULL;
 }

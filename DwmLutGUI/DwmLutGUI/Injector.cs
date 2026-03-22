@@ -138,19 +138,12 @@ namespace DwmLutGUI
                 throw new Exception("Failed to impersonate logged on user");
             }
 
-            
-            StringBuilder userName = new StringBuilder(1024);
-            uint userNameSize = (uint)userName.Capacity;
-            var userNameResult = GetUserName(userName, ref userNameSize);
-            if (!userNameResult)
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
             {
-                throw new Exception("Failed to get username");
-            }
-
-            
-            if (userName.ToString() != "SYSTEM")
-            {
-                throw new Exception("Not running as SYSTEM");
+                if (!identity.IsSystem)
+                {
+                    throw new Exception("Not running as SYSTEM");
+                }
             }
         }
 
