@@ -1,47 +1,41 @@
-# A fork of the [original dwm_lut](https://github.com/ledoge/dwm_lut) - Updated for Windows 11 25H2
-### Current Version: v1.0.8_25H2
-## [Download latest release](https://github.com/zkippp/dwm_lut_fixed/releases/tag/v1.0.8_25H2)
+# dwm_lut_fixed (v1.0.8)
 
-## Credits
-- **Original Author**: [ledoge](https://github.com/ledoge/dwm_lut)
-- **25H2 Update & Maintenance**: [Eduu](https://github.com/zkippp/dwm_lut_fixed)
+[![GitHub stars](https://img.shields.io/github/stars/zkippp/dwm_lut_fixed?style=for-the-badge&color=gold)](https://github.com/zkippp/dwm_lut_fixed/stargazers)
+[![GitHub releases](https://img.shields.io/github/v/release/zkippp/dwm_lut_fixed?include_prereleases&style=for-the-badge&color=blue)](https://github.com/zkippp/dwm_lut_fixed/releases)
+[![License](https://img.shields.io/github/license/zkippp/dwm_lut_fixed?style=for-the-badge&color=green)](https://github.com/zkippp/dwm_lut_fixed/blob/master/LICENSE)
 
+Maintenance fork of the original `dwm_lut` project, updated and maintained for Windows 11 builds (24H2 and 25H2). This tool enables 3D LUT application for desktop color calibration across multiple monitors.
 
-## Useful links
-- **Our discord**: [Discord Invite](https://discord.gg/Y9Zcf8jGAN)
-- **Releases**: [Releases](https://github.com/zkippp/dwm_lut_fixed/releases)
-- **Documentation**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/blob/master/DOCUMENTATION.md)
+## Key Features
+
+- **Windows 11 Support**: Fully compatible with Build 26100 (24H2) and Build 26200+ (25H2).
+- **Multi-Monitor/Multi-GPU**: Individual LUT application for different displays with precision coordinate matching.
+- **HDR Compatibility**: Improved logic for HDR/SDR switching and primary context matching.
+- **MPO/DirectFlip Management**: Automated memory patching for `OverlayTestMode`, ensuring persistent LUT application during full-screen scenarios.
+- **Enhanced .cube Parser**: Support for DisplayCAL generated LUTs, including negative values and floating-point data.
+
+## Useful Links
+
+- **Discord**: [Join Server](https://discord.gg/Y9Zcf8jGAN)
+- **Releases**: [Download Latest](https://github.com/zkippp/dwm_lut_fixed/releases)
+- **Technical Info**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/blob/master/DOCUMENTATION.md)
 
 ## Support the project
-If you find this tool useful and want to support the project, consider buying me a coffee!
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/zkippp)
 
 ## Dependencies
-- Visual C++ runtime (https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/)
 
-# About
-This tool applies 3D LUTs to the Windows desktop by hooking into DWM. It works in both SDR and HDR modes, and uses tetrahedral interpolation on the LUT data. In SDR, blue-noise dithering is applied to the output to reduce banding.
+- **Visual C++ Runtime**: [AIO Redistributable](https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/)
 
-### Windows 11 25H2 (Build 26200+) Support
-The latest Windows 11 builds introduced significant internal changes to how DWM handles swap chains and overlays. This fork has been updated with:
-- **Direct Texture Retrieval**: On 25H2, `IDXGISwapChain` is no longer directly exposed. We now use a recursive vtable traversal (`overlaySwapChain->vt[24]()->vt[19]()`) to safely acquire the backbuffer.
-- **Memory Offset Updates**: Corrected `DeviceClipBox` and internal coordinate structures that shifted in Build 26200+ (positions now stored as integers at new offsets).
-- **MPO/DirectFlip Management**: Implemented a memory patch that sets DWM's internal `OverlayTestMode` to `5`, ensuring LUTs remain applied even when games try to use Multi-Plane Overlays.
-- **Multi-Monitor Fix**: Resolved issues where LUTs would fail to apply onto secondary monitors on the latest canary/dev builds.
+## Build Instructions
 
-# Usage
-Use DisplayCAL or similar to generate .cube LUT files of any size, run `DwmLutGUI.exe`, assign them to monitors and then click Apply. Note that LUTs cannot be applied to monitors that are in "Duplicate" mode.
+1. Install **Visual Studio 2022** with C++ desktop development.
+2. Clone repository.
+3. Integrate vcpkg: `.\vcpkg\vcpkg.exe integrate install`.
+4. Build in **x64 Release** configuration.
 
-For ColourSpace users with HT license level, 65^3 eeColor LUT .txt files are also supported.
+## Credits
 
-HDR LUTs must use BT.2020 + SMPTE ST 2084 values as input and output.
-
-# Compiling
-Install [vcpkg](https://vcpkg.io/en/getting-started.html) for C++ dependency management:
-
-- `git clone https://github.com/Microsoft/vcpkg.git`
-- `.\vcpkg\bootstrap-vcpkg.bat`
-- `.\vcpkg\vcpkg.exe integrate install`
-
-Open the projects in Visual Studio 2022 and compile a **x64 Release** build. Ensure you have the C++ Desktop Development workload installed.
+- **Original Author**: [ledoge](https://github.com/ledoge/dwm_lut)
+- **Maintenance**: [zkippp](https://github.com/zkippp/dwm_lut_fixed)
