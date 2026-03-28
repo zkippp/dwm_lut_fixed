@@ -3,7 +3,9 @@ updates:
   - package-ecosystem: "nuget"
     directory: "/DwmLutGUI"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Europe/Bucharest"
     groups:
       all-nuget:
         patterns:
