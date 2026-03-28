@@ -12,6 +12,11 @@
 - **Releases**: [Releases](https://github.com/zkippp/dwm_lut_fixed/releases)
 - **Documentation**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/blob/master/DOCUMENTATION.md)
 
+## Support the project
+If you find this tool useful and want to support the project, consider buying me a coffee!
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/zkippp)
+
 ## Dependencies
 - Visual C++ runtime (https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/)
 
