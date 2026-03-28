@@ -218,7 +218,7 @@ const unsigned char COverlayContext_OverlaysEnabled_bytes_w11[] = {
 	0x83, 0x3D, '?', '?', '?', '?', '?', 0x75, 0x04
 };
 
-int COverlayContext_DeviceClipBox_offset_w11 = 0x4EE8;
+int COverlayContext_DeviceClipBox_offset_w11 = 0x466C;
 
 const int IOverlaySwapChain_HardwareProtected_offset_w11 = -0x144;
 
@@ -697,59 +697,15 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 			unsigned char* base = (unsigned char*)*(void**)context;
 			if (base)
 			{
-				struct ContextCache { void* ctx; int offset; bool isFloat; };
-				static ContextCache s_caches[8] = { 0 }; 
-				int cached_idx = -1;
-				for (int i = 0; i < 8; i++) {
-					if (s_caches[i].ctx == base) {
-						cached_idx = i;
-						break;
-					}
-				}
+				float* rect = (float*)(base + COverlayContext_DeviceClipBox_offset_w11);
+				left = (int)rect[0];
+				top = (int)rect[1];
 
-				if (cached_idx != -1) {
-					if (s_caches[cached_idx].isFloat) {
-						float* r = (float*)(base + s_caches[cached_idx].offset);
-						left = (int)r[0];
-						top = (int)r[1];
-					} else {
-						int* r = (int*)(base + s_caches[cached_idx].offset);
-						left = r[0];
-						top = r[1];
-					}
-				} else {
-					
-					float* def_float = (float*)(base + COverlayContext_DeviceClipBox_offset_w11);
-					int* def_int = (int*)(base + COverlayContext_DeviceClipBox_offset_w11);
-					
-					left = (int)def_float[0];
-					top = (int)def_float[1];
-
-					
-					for (int i = 0x800; i < 0x12000; i += 4) {
-						float* srf = (float*)(base + i);
-						int* sri = (int*)(base + i);
-						
-						for (int l = 0; l < numLuts; l++) {
-							if (luts[l].left == 0 && luts[l].top == 0) continue; 
-							
-							if (abs(srf[0] - (float)luts[l].left) < 0.1f && abs(srf[1] - (float)luts[l].top) < 0.1f) {
-								left = luts[l].left;
-								top = luts[l].top;
-								for (int c = 0; c < 8; c++) { if (!s_caches[c].ctx) { s_caches[c] = {base, i, true}; break; } }
-								goto found;
-							}
-							if (sri[0] == luts[l].left && sri[1] == luts[l].top) {
-								left = luts[l].left;
-								top = luts[l].top;
-								for (int c = 0; c < 8; c++) { if (!s_caches[c].ctx) { s_caches[c] = {base, i, false}; break; } }
-								goto found;
-							}
-						}
-					}
-					found:;
+				if (left == 0 && top == 0 && (rect[2] != 0 || rect[3] != 0))
+				{
+					left = (int)rect[2];
+					top = (int)rect[3];
 				}
-				
 				gotCoords = true;
 			}
 		}
