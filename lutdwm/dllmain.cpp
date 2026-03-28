@@ -693,10 +693,20 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		}
 		else if (isWindows11)
 		{
-			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11);
-			left = (int)rect[0];
-			top = (int)rect[1];
-			gotCoords = true;
+			unsigned char* base = (unsigned char*)*(void**)context;
+			if (base)
+			{
+				float* rect = (float*)(base + COverlayContext_DeviceClipBox_offset_w11);
+				left = (int)rect[0];
+				top = (int)rect[1];
+
+				if (left == 0 && top == 0 && (rect[2] != 0 || rect[3] != 0))
+				{
+					left = (int)rect[2];
+					top = (int)rect[3];
+				}
+				gotCoords = true;
+			}
 		}
 		else
 		{
@@ -730,7 +740,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 	}
 
 	
-	if ((isWindows11_25h2 || isWindows11_24h2) && g_primaryHdrContext == context)
+	if ((isWindows11_25h2 || isWindows11_24h2 || isWindows11) && g_primaryHdrContext == context)
 	{
 		for (int i = 0; i < numLuts; i++)
 		{

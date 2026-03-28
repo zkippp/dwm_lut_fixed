@@ -8,8 +8,8 @@ Maintenance fork of the original `dwm_lut` project, updated and maintained for W
 
 ## Key Features
 
-- **Windows 11 Support**: Fully compatible with Build 26100 (24H2) and Build 26200+ (25H2).
-- **Multi-Monitor/Multi-GPU**: Individual LUT application for different displays with precision coordinate matching.
+- **Windows 11 Compatible**: Full support for **25H2 (Insider)**, **24H2 (Direct composition)**, and **23H2 (Build 22631)**.
+- **Multi-Monitor & Multi-GPU Fix**: Reliable LUT application across multiple displays and GPUs on all modern Windows versions.
 - **HDR Compatibility**: Improved logic for HDR/SDR switching and primary context matching.
 - **MPO/DirectFlip Management**: Automated memory patching for `OverlayTestMode`, ensuring persistent LUT application during full-screen scenarios.
 - **Enhanced .cube Parser**: Support for DisplayCAL generated LUTs, including negative values and floating-point data.
