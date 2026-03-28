@@ -188,7 +188,7 @@ const unsigned char COverlayContext_Present_bytes[] = {
 };
 const int IOverlaySwapChain_IDXGISwapChain_offset = -0x118;
 
-const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes[] = {
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatible_bytes[] = {
 	0x48, 0x89, 0x7c, 0x24, 0x20, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8b, 0xec, 0x48, 0x83,
 	0xec, 0x40
 };
@@ -208,7 +208,7 @@ const unsigned char COverlayContext_Present_bytes_w11[] = {
 const int IOverlaySwapChain_IDXGISwapChain_offset_w11 = 0xE0;
 
 
-const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11[] = {
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11[] = {
 	0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC,
 	0x68, 0x48,
 };
@@ -230,7 +230,7 @@ const unsigned char COverlayContext_Present_bytes_w11_24h2[] = {
 
 const int IOverlaySwapChain_IDXGISwapChain_offset_w11_24h2 = 0x108;
 
-const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2[] = {
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_24h2[] = {
 	0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, '?', 0x48, 0x89, 0x68, '?', 0x48, 0x89, 0x70, '?', 0x48, 0x89, 0x78, '?', 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xDB
 };
 
@@ -251,7 +251,7 @@ const unsigned char COverlayContext_Present_bytes_w11_25h2[] = {
 };
 
 
-const unsigned char COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2[] = {
+const unsigned char COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2[] = {
 	0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x68, 0x10, 0x48, 0x89, 0x70, 0x18, 0x48,
 	0x89, 0x78, 0x20, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x33, 0xDB
 };
@@ -523,11 +523,15 @@ bool ParseLUT(lutData* lut, char* filename)
 
 						return false;
 					}
-					if (line[0] <= '9' && line[0] != '#' && line[0] != '\n')
+					// Skip comments, empty lines, and keyword lines (DOMAIN_MIN, DOMAIN_MAX, TITLE, etc)
+					if (line[0] == '#' || line[0] == '\n' || line[0] == '\r')
+						continue;
+					// Data lines start with digit, '-', or '.'
+					if ((line[0] >= '0' && line[0] <= '9') || line[0] == '-' || line[0] == '.')
 					{
 						float red, green, blue;
 
-						if (sscanf(line, "%f%f%f", &red, &green, &blue) != 3)
+						if (sscanf(line, "%f %f %f", &red, &green, &blue) != 3)
 						{
 							fclose(file);
 
@@ -633,6 +637,9 @@ void UnsetLUTActive(void* target)
 
 lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 {
+	if (!context) return NULL;
+
+	// Cache for performance — avoid re-reading DWM memory every frame
 	static void* last_context = NULL;
 	static lutData* last_lut = NULL;
 	static bool last_hdr = false;
@@ -644,53 +651,61 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		return last_lut;
 	}
 
-
-	int left, top;
-
-	if (isWindows11_25h2)
+	// Force OverlayTestMode so DWM composes (required for LUT to work)
+	if (g_pOverlayTestMode != NULL)
 	{
-		void* realObj = *(void**)context;
-
-
-		int* rect = (int*)((unsigned char*)realObj + 0x4D0);
-
-		left = (int)rect[0];
-		top = (int)rect[1];
-
-	}
-	else if (isWindows11_24h2)
-	{
-		float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11_24h2);
-		left = (int)rect[2];
-		top = (int)rect[3];
-		char message_buf[100];
-		sprintf(message_buf, "Left: %d, Top: %d", left, top);
-		LOG_ONLY_ONCE(message_buf)
-
-
-		sprintf(message_buf, "Rect address: 0x%p", rect);
-		LOG_ONLY_ONCE(message_buf)
-	}
-	else if (isWindows11)
-	{
-		float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11);
-		left = (int)rect[0];
-		top = (int)rect[1];
-		char message_buf[100];
-		sprintf(message_buf, "Left: %d, Top: %d", left, top);
-		LOG_ONLY_ONCE(message_buf)
-
-
-		sprintf(message_buf, "Rect address: 0x%p", rect);
-		LOG_ONLY_ONCE(message_buf)
-	}
-	else
-	{
-		int* rect = (int*)((unsigned char*)context + COverlayContext_DeviceClipBox_offset);
-		left = rect[0];
-		top = rect[1];
+		*g_pOverlayTestMode = 5;
 	}
 
+	// Read monitor coordinates from DWM context (version-specific offsets)
+	int left = 0, top = 0;
+	bool gotCoords = false;
+
+	__try
+	{
+		if (isWindows11_25h2)
+		{
+			void* realObj = *(void**)context;
+			if (realObj)
+			{
+				int* rect = (int*)((unsigned char*)realObj + 0x4D0);
+				left = rect[0];
+				top = rect[1];
+				gotCoords = true;
+			}
+		}
+		else if (isWindows11_24h2)
+		{
+			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11_24h2);
+			left = (int)rect[2];
+			top = (int)rect[3];
+			gotCoords = true;
+		}
+		else if (isWindows11)
+		{
+			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11);
+			left = (int)rect[0];
+			top = (int)rect[1];
+			gotCoords = true;
+		}
+		else
+		{
+			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset);
+			left = (int)rect[0];
+			top = (int)rect[1];
+			gotCoords = true;
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		gotCoords = false;
+	}
+
+	char message_buf[128];
+	sprintf(message_buf, "GetLUT: left=%d, top=%d, hdr=%d, gotCoords=%d", left, top, (int)hdr, (int)gotCoords);
+	LOG_ONLY_ONCE(message_buf)
+
+	// Try exact match on left/top + hdr mode
 	for (int i = 0; i < numLuts; i++)
 	{
 		if (luts[i].left == left && luts[i].top == top && luts[i].isHdr == hdr)
@@ -704,22 +719,39 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		}
 	}
 
-
-
+	// HDR fallback for 25h2: if this is the primary HDR context, try matching with opposite hdr flag
 	if (isWindows11_25h2 && g_primaryHdrContext == context)
 	{
 		for (int i = 0; i < numLuts; i++)
 		{
 			if (luts[i].left == left && luts[i].top == top && luts[i].isHdr != hdr)
 			{
+				last_context = context;
+				last_lut = &luts[i];
+				last_hdr = hdr;
+				last_index = i;
 				if (out_index) *out_index = i;
 				return &luts[i];
 			}
 		}
 	}
 
+	// Fallback: if only 1 LUT loaded, use it for any monitor (backward compat)
+	if (numLuts == 1 && luts[0].isHdr == hdr)
+	{
+		last_context = context;
+		last_lut = &luts[0];
+		last_hdr = hdr;
+		last_index = 0;
+		if (out_index) *out_index = 0;
+		return &luts[0];
+	}
 
-
+	// No match
+	last_context = context;
+	last_lut = NULL;
+	last_hdr = hdr;
+	last_index = -1;
 	return NULL;
 }
 
@@ -1395,28 +1427,28 @@ long COverlayContext_Present_hook(void* self, void* overlaySwapChain, unsigned i
 	return COverlayContext_Present_orig(self, overlaySwapChain, a3, rectVec, a5, a6);
 }
 
-typedef bool (CWindowContext_IsCandidateDirectFlipCompatbile_t)(void*, void*, bool);
-CWindowContext_IsCandidateDirectFlipCompatbile_t* CWindowContext_IsCandidateDirectFlipCompatbile_orig = NULL;
+typedef bool (CWindowContext_IsCandidateDirectFlipCompatible_t)(void*, void*, bool);
+CWindowContext_IsCandidateDirectFlipCompatible_t* CWindowContext_IsCandidateDirectFlipCompatible_orig = NULL;
 
-bool CWindowContext_IsCandidateDirectFlipCompatbile_hook(void* self, void* a2, bool a3)
+bool CWindowContext_IsCandidateDirectFlipCompatible_hook(void* self, void* a2, bool a3)
 {
 	if (numLuts > 0)
 	{
 		return false;
 	}
-	return CWindowContext_IsCandidateDirectFlipCompatbile_orig(self, a2, a3);
+	return CWindowContext_IsCandidateDirectFlipCompatible_orig(self, a2, a3);
 }
 
-typedef bool (CCompSwapChain_IsCandidateDirectFlipCompatbile_t)(void*, void*, bool);
-CCompSwapChain_IsCandidateDirectFlipCompatbile_t* CCompSwapChain_IsCandidateDirectFlipCompatbile_orig = NULL;
+typedef bool (CCompSwapChain_IsCandidateDirectFlipCompatible_t)(void*, void*, bool);
+CCompSwapChain_IsCandidateDirectFlipCompatible_t* CCompSwapChain_IsCandidateDirectFlipCompatible_orig = NULL;
 
-bool CCompSwapChain_IsCandidateDirectFlipCompatbile_hook(void* self, void* a2, bool a3)
+bool CCompSwapChain_IsCandidateDirectFlipCompatible_hook(void* self, void* a2, bool a3)
 {
 	if (numLuts > 0)
 	{
 		return false;
 	}
-	return CCompSwapChain_IsCandidateDirectFlipCompatbile_orig(self, a2, a3);
+	return CCompSwapChain_IsCandidateDirectFlipCompatible_orig(self, a2, a3);
 }
 
 typedef bool (CCompVisual_IsCandidateForPromotion_t)(void*, void*, void*);
@@ -1443,31 +1475,31 @@ bool CCompSwapChain_IsCandidateIndependentFlipCompatible_hook(void* self)
 	return CCompSwapChain_IsCandidateIndependentFlipCompatible_orig(self);
 }
 
-typedef bool (COverlayContext_IsCandidateDirectFlipCompatbile_t)(void*, void*, void*, void*, int, unsigned int, bool,
-                                                                 bool);
-typedef bool (COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t)(void*, void*, void*, void*, unsigned int, bool);
+typedef bool (COverlayContext_IsCandidateDirectFlipCompatible_t)(void*, void*, void*, void*, int, unsigned int, bool, bool);
 
-COverlayContext_IsCandidateDirectFlipCompatbile_t* COverlayContext_IsCandidateDirectFlipCompatbile_orig;
-COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t* COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2;
+typedef bool (COverlayContext_IsCandidateDirectFlipCompatible_24h2_t)(void*, void*, void*, void*, unsigned int, bool);
 
-bool COverlayContext_IsCandidateDirectFlipCompatbile_hook_24h2(void* self, void* a2, void* a3, void* a4, unsigned int a5,
+COverlayContext_IsCandidateDirectFlipCompatible_t* COverlayContext_IsCandidateDirectFlipCompatible_orig;
+COverlayContext_IsCandidateDirectFlipCompatible_24h2_t* COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2;
+
+bool COverlayContext_IsCandidateDirectFlipCompatible_hook_24h2(void* self, void* a2, void* a3, void* a4, unsigned int a5,
 	bool a6)
 {
 	if (IsLUTActive(self))
 	{
 		return false;
 	}
-	return COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2(self, a2, a3, a4, a5, a6);
+	return COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2(self, a2, a3, a4, a5, a6);
 }
 
-bool COverlayContext_IsCandidateDirectFlipCompatbile_hook(void* self, void* a2, void* a3, void* a4, int a5,
+bool COverlayContext_IsCandidateDirectFlipCompatible_hook(void* self, void* a2, void* a3, void* a4, int a5,
                                                           unsigned int a6, bool a7, bool a8)
 {
 	if (IsLUTActive(self))
 	{
 		return false;
 	}
-	return COverlayContext_IsCandidateDirectFlipCompatbile_orig(self, a2, a3, a4, a5, a6, a7, a8);
+	return COverlayContext_IsCandidateDirectFlipCompatible_orig(self, a2, a3, a4, a5, a6, a7, a8);
 }
 
 typedef bool (COverlayContext_OverlaysEnabled_t)(void*);
@@ -1543,28 +1575,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						COverlayContext_Present_orig_24h2 = (COverlayContext_Present_24h2_t*)address;
 						COverlayContext_Present_real_orig_24h2 = COverlayContext_Present_orig_24h2;
 					}
-					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 && sizeof
-						COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2 <= moduleInfo.SizeOfImage - i && !
-						aob_match_inverse(
-							address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2,
-							sizeof COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_25h2))
+					else if (!COverlayContext_Present_orig_24h2 && sizeof COverlayContext_Present_bytes_w11_25h2 <= moduleInfo.SizeOfImage - i && !aob_match_inverse(address, COverlayContext_Present_bytes_w11_25h2, sizeof COverlayContext_Present_bytes_w11_25h2))
 					{
-						COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 = (
-							COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t*)address;
+						COverlayContext_Present_orig_24h2 = (COverlayContext_Present_24h2_t*)address;
+						COverlayContext_Present_real_orig_24h2 = COverlayContext_Present_orig_24h2;
 					}
-					else if (!CWindowContext_IsCandidateDirectFlipCompatbile_orig && sizeof CWindowContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2
+					else if (!COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2 && sizeof COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2 <= moduleInfo.SizeOfImage - i && !aob_match_inverse(address, COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2, sizeof COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2))
+					{
+						COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2 = (COverlayContext_IsCandidateDirectFlipCompatible_24h2_t*)address;
+					}
+					else if (!CWindowContext_IsCandidateDirectFlipCompatible_orig && sizeof CWindowContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2
 						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
 							address, CWindowContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2,
 							sizeof CWindowContext_IsCandidateDirectFlipCompatible_bytes_w11_25h2))
 					{
-						CWindowContext_IsCandidateDirectFlipCompatbile_orig = (CWindowContext_IsCandidateDirectFlipCompatbile_t*)address;
+						CWindowContext_IsCandidateDirectFlipCompatible_orig = (CWindowContext_IsCandidateDirectFlipCompatible_t*)address;
 					}
-					else if (!CCompSwapChain_IsCandidateDirectFlipCompatbile_orig && sizeof CCompSwapChain_IsCandidateDirectFlipCompatible_bytes_w11_25h2
+					else if (!CCompSwapChain_IsCandidateDirectFlipCompatible_orig && sizeof CCompSwapChain_IsCandidateDirectFlipCompatible_bytes_w11_25h2
 						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
 							address, CCompSwapChain_IsCandidateDirectFlipCompatible_bytes_w11_25h2,
 							sizeof CCompSwapChain_IsCandidateDirectFlipCompatible_bytes_w11_25h2))
 					{
-						CCompSwapChain_IsCandidateDirectFlipCompatbile_orig = (CCompSwapChain_IsCandidateDirectFlipCompatbile_t*)address;
+						CCompSwapChain_IsCandidateDirectFlipCompatible_orig = (CCompSwapChain_IsCandidateDirectFlipCompatible_t*)address;
 					}
 					else if (!CCompVisual_IsCandidateForPromotion_orig && sizeof CCompVisual_IsCandidateForPromotion_bytes_w11_25h2
 						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
@@ -1597,7 +1629,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 							}
 						}
 					}
-					if (COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 &&
+					if (COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2 &&
 						COverlayContext_OverlaysEnabled_orig)
 					{
 						break;
@@ -1616,14 +1648,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						COverlayContext_Present_orig_24h2 = (COverlayContext_Present_24h2_t*)address;
 						COverlayContext_Present_real_orig_24h2 = COverlayContext_Present_orig_24h2;
 					}
-					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig && sizeof
-						COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2 <= moduleInfo.SizeOfImage - i && !
+					else if (!COverlayContext_IsCandidateDirectFlipCompatible_orig && sizeof
+						COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_24h2 <= moduleInfo.SizeOfImage - i && !
 						aob_match_inverse(
-							address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2,
-							sizeof COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11_24h2))
+							address, COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_24h2,
+							sizeof COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11_24h2))
 					{
-						COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 = (
-							COverlayContext_IsCandidateDirectFlipCompatbile_24h2_t*)address;
+						COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2 = (
+							COverlayContext_IsCandidateDirectFlipCompatible_24h2_t*)address;
 					}
 					else if (!COverlayContext_OverlaysEnabled_orig && sizeof COverlayContext_OverlaysEnabled_bytes_relative_w11_24h2
 						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
@@ -1634,7 +1666,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 
 						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)get_relative_address(address, 1, 5);
 					}
-					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatible_orig &&
 						COverlayContext_OverlaysEnabled_orig)
 					{
 						break;
@@ -1653,14 +1685,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						COverlayContext_Present_orig = (COverlayContext_Present_t*)address;
 						COverlayContext_Present_real_orig = COverlayContext_Present_orig;
 					}
-					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig && sizeof
-						COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11 <= moduleInfo.SizeOfImage - i && !
+					else if (!COverlayContext_IsCandidateDirectFlipCompatible_orig && sizeof
+						COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11 <= moduleInfo.SizeOfImage - i && !
 						aob_match_inverse(
-							address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11,
-							sizeof COverlayContext_IsCandidateDirectFlipCompatbile_bytes_w11))
+							address, COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11,
+							sizeof COverlayContext_IsCandidateDirectFlipCompatible_bytes_w11))
 					{
-						COverlayContext_IsCandidateDirectFlipCompatbile_orig = (
-							COverlayContext_IsCandidateDirectFlipCompatbile_t*)address;
+						COverlayContext_IsCandidateDirectFlipCompatible_orig = (
+							COverlayContext_IsCandidateDirectFlipCompatible_t*)address;
 					}
 					else if (!COverlayContext_OverlaysEnabled_orig && sizeof COverlayContext_OverlaysEnabled_bytes_w11
 						<= moduleInfo.SizeOfImage - i && !aob_match_inverse(
@@ -1668,8 +1700,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 							sizeof COverlayContext_OverlaysEnabled_bytes_w11))
 					{
 						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)address;
+
+						// Sync g_pOverlayTestMode for Windows 11 (pre-24H2)
+						int rip_offset = *(int*)(address + 2);
+						g_pOverlayTestMode = (int*)(address + 7 + rip_offset);
 					}
-					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatible_orig &&
 						COverlayContext_OverlaysEnabled_orig)
 					{
 						break;
@@ -1680,11 +1716,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 				DWORD revSize = sizeof(rev);
 				RegGetValueA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "UBR", RRF_RT_DWORD,
 				             NULL, &rev, &revSize);
-
-				if (rev >= 706)
-				{
-
-				}
 			}
 			else
 			{
@@ -1697,24 +1728,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						COverlayContext_Present_orig = (COverlayContext_Present_t*)address;
 						COverlayContext_Present_real_orig = COverlayContext_Present_orig;
 					}
-					else if (!COverlayContext_IsCandidateDirectFlipCompatbile_orig && !memcmp(
-						address, COverlayContext_IsCandidateDirectFlipCompatbile_bytes,
-						sizeof(COverlayContext_IsCandidateDirectFlipCompatbile_bytes)))
+					else if (!COverlayContext_IsCandidateDirectFlipCompatible_orig && !memcmp(
+						address, COverlayContext_IsCandidateDirectFlipCompatible_bytes,
+						sizeof(COverlayContext_IsCandidateDirectFlipCompatible_bytes)))
 					{
 						static int found = 0;
 						found++;
 						if (found == 2)
 						{
-							COverlayContext_IsCandidateDirectFlipCompatbile_orig = (
-								COverlayContext_IsCandidateDirectFlipCompatbile_t*)(address - 0xa);
+							COverlayContext_IsCandidateDirectFlipCompatible_orig = (
+								COverlayContext_IsCandidateDirectFlipCompatible_t*)(address - 0xa);
 						}
 					}
 					else if (!COverlayContext_OverlaysEnabled_orig && !memcmp(
 						address, COverlayContext_OverlaysEnabled_bytes, sizeof(COverlayContext_OverlaysEnabled_bytes)))
 					{
 						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)(address - 0x7);
+						
+						// Sync g_pOverlayTestMode for Windows 10
+						int rip_offset = *(int*)(address - 5);
+						g_pOverlayTestMode = (int*)(address + rip_offset);
 					}
-					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+					if (COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatible_orig &&
 						COverlayContext_OverlaysEnabled_orig)
 					{
 						break;
@@ -1728,9 +1763,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 			{
 				return FALSE;
 			}
-			if ((COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatbile_orig &&
+			if ((COverlayContext_Present_orig && COverlayContext_IsCandidateDirectFlipCompatible_orig &&
 				COverlayContext_OverlaysEnabled_orig) ||
-				(COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2 && COverlayContext_OverlaysEnabled_orig) && numLuts != 0)
+				(COverlayContext_Present_orig_24h2 && COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2 && COverlayContext_OverlaysEnabled_orig) && numLuts != 0)
 
 			{
 				MH_Initialize();
@@ -1742,19 +1777,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 						(PVOID*)&COverlayContext_Present_orig_24h2);
 
 				if (!isWindows11_24h2 && !isWindows11_25h2)
-					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_orig,
-								  (PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_hook,
-								  (PVOID*)&COverlayContext_IsCandidateDirectFlipCompatbile_orig);
+					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatible_orig,
+								  (PVOID)COverlayContext_IsCandidateDirectFlipCompatible_hook,
+								  (PVOID*)&COverlayContext_IsCandidateDirectFlipCompatible_orig);
 				else
-					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2,
-						(PVOID)COverlayContext_IsCandidateDirectFlipCompatbile_hook_24h2,
-						(PVOID*)&COverlayContext_IsCandidateDirectFlipCompatbile_orig_24h2);
+					MH_CreateHook((PVOID)COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2,
+						(PVOID)COverlayContext_IsCandidateDirectFlipCompatible_hook_24h2,
+						(PVOID*)&COverlayContext_IsCandidateDirectFlipCompatible_orig_24h2);
 
-				if (CWindowContext_IsCandidateDirectFlipCompatbile_orig)
+				if (CWindowContext_IsCandidateDirectFlipCompatible_orig)
 				{
-					MH_CreateHook((PVOID)CWindowContext_IsCandidateDirectFlipCompatbile_orig,
-						(PVOID)CWindowContext_IsCandidateDirectFlipCompatbile_hook,
-						(PVOID*)&CWindowContext_IsCandidateDirectFlipCompatbile_orig);
+					MH_CreateHook((PVOID)CWindowContext_IsCandidateDirectFlipCompatible_orig,
+						(PVOID)CWindowContext_IsCandidateDirectFlipCompatible_hook,
+						(PVOID*)&CWindowContext_IsCandidateDirectFlipCompatible_orig);
 					LOG_ONLY_ONCE("Hooked CWindowContext::IsCandidateDirectFlipCompatible")
 				}
 				else {
@@ -1772,11 +1807,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 					LOG_ONLY_ONCE("FAILED to find CCompSwapChain::IsCandidateIndependentFlipCompatible")
 				}
 
-				if (CCompSwapChain_IsCandidateDirectFlipCompatbile_orig)
+				if (CCompSwapChain_IsCandidateDirectFlipCompatible_orig)
 				{
-					MH_CreateHook((PVOID)CCompSwapChain_IsCandidateDirectFlipCompatbile_orig,
-						(PVOID)CCompSwapChain_IsCandidateDirectFlipCompatbile_hook,
-						(PVOID*)&CCompSwapChain_IsCandidateDirectFlipCompatbile_orig);
+					MH_CreateHook((PVOID)CCompSwapChain_IsCandidateDirectFlipCompatible_orig,
+						(PVOID)CCompSwapChain_IsCandidateDirectFlipCompatible_hook,
+						(PVOID*)&CCompSwapChain_IsCandidateDirectFlipCompatible_orig);
 					LOG_ONLY_ONCE("Hooked CCompSwapChain::IsCandidateDirectFlipCompatible")
 				}
 				else {
@@ -1792,39 +1827,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 				}
 				else {
 					LOG_ONLY_ONCE("FAILED to find CCompVisual::IsCandidateForPromotion")
-				}
-
-				if (CWindowContext_IsCandidateDirectFlipCompatbile_orig)
-				{
-					MH_CreateHook((PVOID)CWindowContext_IsCandidateDirectFlipCompatbile_orig,
-						(PVOID)CWindowContext_IsCandidateDirectFlipCompatbile_hook,
-						(PVOID*)&CWindowContext_IsCandidateDirectFlipCompatbile_orig);
-					LOG_ONLY_ONCE("Hooked CWindowContext::IsCandidateDirectFlipCompatible")
-				}
-				else {
-					LOG_ONLY_ONCE("FAILED to find CWindowContext::IsCandidateDirectFlipCompatible")
-				}
-
-				if (CCompSwapChain_IsCandidateDirectFlipCompatbile_orig)
-				{
-					MH_CreateHook((PVOID)CCompSwapChain_IsCandidateDirectFlipCompatbile_orig,
-						(PVOID)CCompSwapChain_IsCandidateDirectFlipCompatbile_hook,
-						(PVOID*)&CCompSwapChain_IsCandidateDirectFlipCompatbile_orig);
-					LOG_ONLY_ONCE("Hooked CCompSwapChain::IsCandidateDirectFlipCompatible")
-				}
-				else {
-					LOG_ONLY_ONCE("FAILED to find CCompSwapChain::IsCandidateDirectFlipCompatible")
-				}
-
-				if (CCompSwapChain_IsCandidateIndependentFlipCompatible_orig)
-				{
-					MH_CreateHook((PVOID)CCompSwapChain_IsCandidateIndependentFlipCompatible_orig,
-						(PVOID)CCompSwapChain_IsCandidateIndependentFlipCompatible_hook,
-						(PVOID*)&CCompSwapChain_IsCandidateIndependentFlipCompatible_orig);
-					LOG_ONLY_ONCE("Hooked CCompSwapChain::IsCandidateIndependentFlipCompatible")
-				}
-				else {
-					LOG_ONLY_ONCE("FAILED to find CCompSwapChain::IsCandidateIndependentFlipCompatible")
 				}
 
 				if (g_pOverlayTestMode != NULL)
