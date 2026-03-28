@@ -6,6 +6,12 @@
 - **Original Author**: [ledoge](https://github.com/ledoge/dwm_lut)
 - **25H2 Update & Maintenance**: [Eduu](https://github.com/zkippp/dwm_lut_fixed)
 
+
+## Useful links
+- **Our discord**: [Discord Invite](https://discord.gg/Y9Zcf8jGAN)
+- **Releases**: [Releases](https://github.com/zkippp/dwm_lut_fixed/releases)
+- **Documentation**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/blob/master/DOCUMENTATION.md)
+
 ## Dependencies
 - Visual C++ runtime (https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/)
 
@@ -18,12 +24,6 @@ The latest Windows 11 builds introduced significant internal changes to how DWM 
 - **Memory Offset Updates**: Corrected `DeviceClipBox` and internal coordinate structures that shifted in Build 26200+ (positions now stored as integers at new offsets).
 - **MPO/DirectFlip Management**: Implemented a memory patch that sets DWM's internal `OverlayTestMode` to `5`, ensuring LUTs remain applied even when games try to use Multi-Plane Overlays.
 - **Multi-Monitor Fix**: Resolved issues where LUTs would fail to apply onto secondary monitors on the latest canary/dev builds.
-
-### v1.0.8 Changes
-- Fixed LUT being applied to all monitors instead of the selected one
-- Fixed .cube parser rejecting files with negative values, decimals, or extra keywords (DOMAIN_MIN, DOMAIN_MAX, TITLE) — DisplayCal LUTs now work correctly
-- Improved multi-monitor coordinate matching with SEH protection
-- Added debug logging for monitor coordinate resolution
 
 # Usage
 Use DisplayCAL or similar to generate .cube LUT files of any size, run `DwmLutGUI.exe`, assign them to monitors and then click Apply. Note that LUTs cannot be applied to monitors that are in "Duplicate" mode.
@@ -40,5 +40,3 @@ Install [vcpkg](https://vcpkg.io/en/getting-started.html) for C++ dependency man
 - `.\vcpkg\vcpkg.exe integrate install`
 
 Open the projects in Visual Studio 2022 and compile a **x64 Release** build. Ensure you have the C++ Desktop Development workload installed.
-
-**[Join our Discord server!](https://discord.gg/Y9Zcf8jGAN)**

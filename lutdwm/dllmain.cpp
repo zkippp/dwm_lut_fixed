@@ -430,7 +430,7 @@ float4 PS(VS_OUTPUT input) : SV_TARGET{
 }
 )";
 
-// Removed global D3D variables - now inside DeviceContext
+
 
 struct lutData
 {
@@ -438,7 +438,7 @@ struct lutData
 	int top;
 	int size;
 	bool isHdr;
-	// textureView is now specific to the GPU, retrieved from DeviceContext
+	
 	float* rawLut;
 };
 
@@ -523,10 +523,10 @@ bool ParseLUT(lutData* lut, char* filename)
 
 						return false;
 					}
-					// Skip comments, empty lines, and keyword lines (DOMAIN_MIN, DOMAIN_MAX, TITLE, etc)
+					
 					if (line[0] == '#' || line[0] == '\n' || line[0] == '\r')
 						continue;
-					// Data lines start with digit, '-', or '.'
+					
 					if ((line[0] >= '0' && line[0] <= '9') || line[0] == '-' || line[0] == '.')
 					{
 						float red, green, blue;
@@ -639,7 +639,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 {
 	if (!context) return NULL;
 
-	// Cache for performance — avoid re-reading DWM memory every frame
+	
 	static void* last_context = NULL;
 	static lutData* last_lut = NULL;
 	static bool last_hdr = false;
@@ -651,13 +651,13 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		return last_lut;
 	}
 
-	// Force OverlayTestMode so DWM composes (required for LUT to work)
+	
 	if (g_pOverlayTestMode != NULL)
 	{
 		*g_pOverlayTestMode = 5;
 	}
 
-	// Read monitor coordinates from DWM context (version-specific offsets)
+	
 	int left = 0, top = 0;
 	bool gotCoords = false;
 
@@ -676,10 +676,20 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		}
 		else if (isWindows11_24h2)
 		{
-			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset_w11_24h2);
-			left = (int)rect[2];
-			top = (int)rect[3];
-			gotCoords = true;
+			unsigned char* base = (unsigned char*)*(void**)context;
+			if (base)
+			{
+				float* rect = (float*)(base + COverlayContext_DeviceClipBox_offset_w11_24h2);
+				left = (int)rect[0];
+				top = (int)rect[1];
+
+				if (left == 0 && top == 0 && (rect[2] != 0 || rect[3] != 0))
+				{
+					left = (int)rect[2];
+					top = (int)rect[3];
+				}
+				gotCoords = true;
+			}
 		}
 		else if (isWindows11)
 		{
@@ -705,7 +715,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 	sprintf(message_buf, "GetLUT: left=%d, top=%d, hdr=%d, gotCoords=%d", left, top, (int)hdr, (int)gotCoords);
 	LOG_ONLY_ONCE(message_buf)
 
-	// Try exact match on left/top + hdr mode
+	
 	for (int i = 0; i < numLuts; i++)
 	{
 		if (luts[i].left == left && luts[i].top == top && luts[i].isHdr == hdr)
@@ -719,8 +729,8 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		}
 	}
 
-	// HDR fallback for 25h2: if this is the primary HDR context, try matching with opposite hdr flag
-	if (isWindows11_25h2 && g_primaryHdrContext == context)
+	
+	if ((isWindows11_25h2 || isWindows11_24h2) && g_primaryHdrContext == context)
 	{
 		for (int i = 0; i < numLuts; i++)
 		{
@@ -736,7 +746,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		}
 	}
 
-	// Fallback: if only 1 LUT loaded, use it for any monitor (backward compat)
+	
 	if (numLuts == 1 && luts[0].isHdr == hdr)
 	{
 		last_context = context;
@@ -747,7 +757,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 		return &luts[0];
 	}
 
-	// No match
+	
 	last_context = context;
 	last_lut = NULL;
 	last_hdr = hdr;
@@ -833,7 +843,7 @@ void InitializeDeviceContext(ID3D11Device* inputDevice, DeviceContext* ctx)
 		{
 			lutData* lut = &luts[i];
             
-            if (!lut->rawLut) continue; // Unlikely, but just in case it was partially loaded
+            if (!lut->rawLut) continue; 
 
 			D3D11_TEXTURE3D_DESC desc = {};
 			desc.Width = lut->size;
@@ -853,7 +863,7 @@ void InitializeDeviceContext(ID3D11Device* inputDevice, DeviceContext* ctx)
 			EXECUTE_WITH_LOG(ctx->device->CreateTexture3D(&desc, &initData, &tex))
 			EXECUTE_WITH_LOG(ctx->device->CreateShaderResourceView((ID3D11Resource*)tex, NULL, &ctx->lutTextureViews[i]))
 			tex->Release();
-			// No longer freeing rawLut here because other per-device Contexts might need it later.
+			
 		}
 		{
 			D3D11_SAMPLER_DESC samplerDesc = {};
@@ -1104,8 +1114,8 @@ bool RenderLUT(void* cOverlayContext, ID3D11Texture2D* backBuffer, struct tagREC
 
 	ctx->deviceContext->PSSetConstantBuffers(0, 1, &ctx->constantBuffer);
 
-	// Optimization: Copy the relevant parts of the backbuffer to our staging texture once.
-	// We copy the entire backbuffer area currently used to be safe and efficient.
+	
+	
 	D3D11_BOX sourceBox;
 	sourceBox.left = 0;
 	sourceBox.top = 0;
@@ -1701,7 +1711,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 					{
 						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)address;
 
-						// Sync g_pOverlayTestMode for Windows 11 (pre-24H2)
+						
 						int rip_offset = *(int*)(address + 2);
 						g_pOverlayTestMode = (int*)(address + 7 + rip_offset);
 					}
@@ -1745,7 +1755,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 					{
 						COverlayContext_OverlaysEnabled_orig = (COverlayContext_OverlaysEnabled_t*)(address - 0x7);
 						
-						// Sync g_pOverlayTestMode for Windows 10
+						
 						int rip_offset = *(int*)(address - 5);
 						g_pOverlayTestMode = (int*)(address + rip_offset);
 					}
