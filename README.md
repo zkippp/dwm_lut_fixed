@@ -1,6 +1,6 @@
 # A fork of the [original dwm_lut](https://github.com/ledoge/dwm_lut) - Updated for Windows 11 25H2
-### Current Version: v1.0.6_25H2
-## [Download latest release](https://github.com/zkippp/dwm_lut_fixed/releases/tag/v1.0.5_25H2)
+### Current Version: v1.0.8_25H2
+## [Download latest release](https://github.com/zkippp/dwm_lut_fixed/releases/tag/v1.0.8_25H2)
 
 ## Credits
 - **Original Author**: [ledoge](https://github.com/ledoge/dwm_lut)
