@@ -218,7 +218,7 @@ const unsigned char COverlayContext_OverlaysEnabled_bytes_w11[] = {
 	0x83, 0x3D, '?', '?', '?', '?', '?', 0x75, 0x04
 };
 
-int COverlayContext_DeviceClipBox_offset_w11 = 0x466C;
+int COverlayContext_DeviceClipBox_offset_w11 = 0x4EE8;
 
 const int IOverlaySwapChain_HardwareProtected_offset_w11 = -0x144;
 
@@ -286,6 +286,7 @@ const int IOverlaySwapChain_GetSwapChain_vtable_offset_w11_25h2 = 0x108;
 
 
 bool isWindows11 = false;
+bool isWindows11_23h2 = false;
 bool isWindows11_24h2 = false;
 bool isWindows11_25h2 = false;
 
@@ -705,15 +706,29 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 					left = (int)rect[2];
 					top = (int)rect[3];
 				}
+
+				if (left == 0 && top == 0)
+				{
+					float* rectAlt = (float*)(base + 0x466C);
+					if (rectAlt[0] != 0 || rectAlt[1] != 0)
+					{
+						left = (int)rectAlt[0];
+						top = (int)rectAlt[1];
+					}
+				}
 				gotCoords = true;
 			}
 		}
 		else
 		{
-			float* rect = (float*)((unsigned char*)*(void**)context + COverlayContext_DeviceClipBox_offset);
-			left = (int)rect[0];
-			top = (int)rect[1];
-			gotCoords = true;
+			unsigned char* base = (unsigned char*)*(void**)context;
+			if (base)
+			{
+				float* rect = (float*)(base + COverlayContext_DeviceClipBox_offset);
+				left = (int)rect[0];
+				top = (int)rect[1];
+				gotCoords = true;
+			}
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
@@ -1566,6 +1581,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 			ULONGLONG dwlConditionMask = 0;
 			VER_SET_CONDITION(dwlConditionMask, VER_BUILDNUMBER, VER_GREATER_EQUAL);
 
+			OSVERSIONINFOEX versionInfo23h2;
+			ZeroMemory(&versionInfo23h2, sizeof OSVERSIONINFOEX);
+			versionInfo23h2.dwOSVersionInfoSize = sizeof OSVERSIONINFOEX;
+			versionInfo23h2.dwBuildNumber = 22621;
+
 			if (VerifyVersionInfo(&versionInfo25h2, VER_BUILDNUMBER, dwlConditionMask))
 			{
 				isWindows11_25h2 = true;
@@ -1573,6 +1593,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID lpReserved)
 			else if (VerifyVersionInfo(&versionInfo24h2, VER_BUILDNUMBER, dwlConditionMask))
 			{
 				isWindows11_24h2 = true;
+			}
+			else if (VerifyVersionInfo(&versionInfo23h2, VER_BUILDNUMBER, dwlConditionMask))
+			{
+				isWindows11_23h2 = true;
+				isWindows11 = true;
 			}
 			else if (VerifyVersionInfo(&versionInfo, VER_BUILDNUMBER, dwlConditionMask))
 			{
