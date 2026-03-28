@@ -1,59 +1,73 @@
-# DwmLut Documentation
+# DwmLut High-Level Documentation
 
-## Architecture Overview
+## 1. Overview
+DwmLut is a low-level system utility designed to apply 3D Lookup Tables (LUTs) to the Windows Desktop Window Manager (DWM). This allows for system-wide color correction, calibration, or creative grading across all applications and monitors.
 
-DwmLut is composed of a C++ core (`lutdwm`) and a C# management interface (`DwmLutGUI`).
-
-### 1. The Core Engine (`lutdwm`)
-The core engine is a dynamic link library (`lutdwm.dll`) designed for injection into `dwm.exe` (Desktop Window Manager).
-
-#### Key Responsibilities:
-- **Direct3D Hooking**: Intercepts DWM rendering calls using vtable pinning and AOB scanning.
-- **LUT Application**: Uses a custom pixel shader to apply 3D LUT data via tetrahedral interpolation.
-- **Dithering**: Implements blue-noise dithering for SDR display modes to maintain bit-depth integrity.
-- **Windows Version Compatibility**: Contains specific logic/offsets for Windows 10, Windows 11 (22H2/23H2), and Windows 11 25H2.
-
-#### Core Files:
-- `lutdwm/dllmain.cpp`: Main entry point, hooking logic, and shader management.
-- `lutdwm/noise.h`: Blue noise texture data for dithering.
-- `lutdwm/pch.h`: Precompiled headers.
-
-### 2. The GUI Manager (`DwmLutGUI`)
-A WPF application used to configure and monitor the LUT application status.
-
-#### Key Features:
-- **Per-Monitor Calibration**: Detects all connected monitors and allows assigning different `.cube` files to each.
-- **UAC Bypass Autostart**: Uses Windows Task Scheduler to launch with highest privileges on system logon.
-- **DLL Injection**: Automates the `CreateRemoteThread` injection process into `dwm.exe`.
-- **Minimized Operation**: Runs in the system tray to keep LUTs active without cluttering the taskbar.
-
-#### Project Layout:
-- `DwmLutGUI/MainWindow.xaml`: Main user interface.
-- `DwmLutGUI/Injector.cs`: Handles process discovery and DLL injection.
-- `DwmLutGUI/MainViewModel.cs`: Core application logic and state management.
+The project consists of two main components:
+1.  **`lutdwm.dll` (C++)**: The core engine that runs inside `dwm.exe`. It hooks into the D3D11 rendering pipeline and applies LUTs using custom shaders.
+2.  **`DwmLutGUI.exe` (C# .NET)**: The management interface that allows users to configure LUTs per monitor, manage autostart, and inject the core engine into the system.
 
 ---
 
-## Technical Deep Dive: Windows 11 25H2 Support
+## 2. Core Architecture
 
-Windows 11 Build 26200 (25H2) significantly refactored DWM's internal structures. This project addresses these changes as follows:
+### Architecture Diagram (Conceptual)
+```mermaid
+graph TD
+    GUI[DwmLutGUI.exe] -->|Injects| DLL[lutdwm.dll]
+    GUI -->|Configures| Registry[Registry/Task Scheduler]
+    DLL -->|Hooks| DWM[dwm.exe]
+    DWM -->|Rendering| D3D11[Direct3D 11 API]
+    D3D11 -->|Intercepted Present| SHADER[Custom Pixel Shader]
+    SHADER -->|Tetrahedral Interpolation| LUT[LUT Data]
+    LUT -->|Final Output| Display[Monitor Display]
+```
 
-- **IDXGISwapChain Discovery**: DWM no longer uses `IDXGISwapChain` in a detectable way via standard patterns. Instead, the engine looks for `IOverlaySwapChain` and calls `vt[24]` to retrieve the underlying swap chain interface safely.
-- **DeviceClipBox Offsets**: Coordinate offsets for monitor clipping were moved from `0x120` to `0x466C` (and recently `0x53E8` in Canary builds).
-- **OverlayTestMode**: To ensure the LUT is applied even during "DirectFlip" or MPO (Multi-Plane Overlays), the engine patches `g_pOverlayTestMode` to `5`.
-
-## Compilation & Development
-
-### Prerequisites:
-- Visual Studio 2022
-- C++ Desktop Development Workload
-- .NET Desktop Development Workload
-- [vcpkg](https://vcpkg.io/)
-
-### Build Configuration:
-1.  **Release x64**: The project MUST be built as x64 to match the DWM process architecture.
-2.  **Dependencies**: Run `vcpkg integrate install` before opening the solution.
+### The Hooking Mechanism
+The project uses advanced binary hooking techniques to intercept DWM's rendering calls. 
+- **Target**: `IDXGISwapChain::Present` or its internal DWM wrappers like `COverlayContext::Present`.
+- **Strategy**: It identifies the correct offsets and vtable entries for various Windows versions (Windows 10, Windows 11, and specifically Windows 11 25H2).
+- **Execution**: When DWM prepares a frame for display, `lutdwm.dll` intercepts the call, sets its own pixel shader (containing the tetrahedral interpolation logic), and applies the selected LUT before passing the frame to the hardware.
 
 ---
 
-*Last Updated: March 2026*
+## 3. Subsystems
+
+### 3.1. Graphics Engine (`lutdwm/dllmain.cpp`)
+Responsible for the actual GPU work.
+- **Shader Logic**: Implements tetrahedral interpolation for high-quality color transformations and blue-noise dithering for SDR to prevent banding.
+- **AOB Scanning**: Uses "Array of Bytes" (AOB) signatures to find internal DWM functions without relying on symbols.
+- **MPO Management**: Patches DWM memory to disable or manage Multi-Plane Overlays (MPO) via `OverlayTestMode`, ensuring the LUT isn't bypassed by hardware optimizations.
+
+### 3.2. GUI & Management (`DwmLutGUI/`)
+- **Monitor Discovery**: Uses `WindowsDisplayAPI` to identify active monitors and their positions.
+- **Workflow**: Saves LUT assignments to `config.xml` and synchronizes them with the injected DLL via a shared memory space or temporary file communication in `%SYSTEMROOT%\Temp\luts`.
+- **Injection Logic (`Injector.cs`)**: Uses standard Windows API (`OpenProcess`, `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`) to load `lutdwm.dll` into the `dwm.exe` process.
+
+---
+
+## 4. Windows 11 25H2 (Build 26200+) Deep Dive
+
+The 25H2 update changed how DWM manages swap chains. The project handles this via:
+- **VTable Traversal**: Instead of finding `IDXGISwapChain` directly, it traverses the `IOverlaySwapChain` vtable.
+- **Coordinate Handling**: Build 26200+ shifted internal coordinate structures to integer-based storage at new offsets (e.g., `DeviceClipBox` at `0x466C` or `0x53E8` depending on the build).
+- **Automation**: Current implementation includes a **Task Scheduler** integration that creates a high-privilege task to bypass UAC prompts and apply LUTs immediately upon login.
+
+---
+
+## 5. Technical Quick Reference
+
+| Feature | Implementation Detail |
+| :--- | :--- |
+| **LUT Formula** | Tetrahedral Interpolation |
+| **SDR Dithering** | Blue Noise Dithering |
+| **Injection Mode** | Remote Thread Creation |
+| **Autostart** | Windows Task Scheduler (`schtasks`) |
+| **Hook Type** | VTable / Middleware Hook |
+
+---
+
+## 6. Project Roadmap & Maintenance
+- **Updating Offsets**: Use the builtin logging (`C:\DWMLOG\dwm.log` in Debug builds) to verify if functions like `Present` or `OverlaysEnabled` were found.
+- **Build Requirements**: Visual Studio 2022 with x64 Release configuration.
+- **Dependencies**: Integrated via `vcpkg`.
