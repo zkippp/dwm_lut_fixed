@@ -700,22 +700,7 @@ lutData* GetLUTDataFromCOverlayContext(void* context, bool hdr, int* out_index)
 				float* rect = (float*)(base + COverlayContext_DeviceClipBox_offset_w11);
 				left = (int)rect[0];
 				top = (int)rect[1];
-
-				if (left == 0 && top == 0 && (rect[2] != 0 || rect[3] != 0))
-				{
-					left = (int)rect[2];
-					top = (int)rect[3];
-				}
-
-				if (left == 0 && top == 0)
-				{
-					float* rectAlt = (float*)(base + 0x466C);
-					if (rectAlt[0] != 0 || rectAlt[1] != 0)
-					{
-						left = (int)rectAlt[0];
-						top = (int)rectAlt[1];
-					}
-				}
+				
 				gotCoords = true;
 			}
 		}
