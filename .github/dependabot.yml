@@ -4,7 +4,7 @@ updates:
     directory: "/DwmLutGUI"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
+    groups:
+      all-nuget:
+        patterns:
+          - "*"
