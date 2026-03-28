@@ -18,7 +18,7 @@ Maintenance fork of the original `dwm_lut` project, updated and maintained for W
 
 - **Discord**: [Join Server](https://discord.gg/Y9Zcf8jGAN)
 - **Releases**: [Download Latest](https://github.com/zkippp/dwm_lut_fixed/releases)
-- **Technical Info**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/blob/master/DOCUMENTATION.md)
+- **Technical Info**: [Documentation](https://github.com/zkippp/dwm_lut_fixed/wiki)
 
 ## Support the project
 
